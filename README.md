@@ -38,6 +38,12 @@ gym tui
 gym repl
 ```
 
+## Docs
+
+- User guide: [`docs/user.md`](docs/user.md)
+- Dev guide: [`docs/dev.md`](docs/dev.md)
+- Agent notes: [`docs/agent.md`](docs/agent.md)
+
 ## Behavior Highlights
 
 ### Registry update
