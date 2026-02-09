@@ -1,8 +1,8 @@
-# skills
+# gym
 
 Universal package manager for [agentskills.io](https://agentskills.io) skills.
 
-- Module/binary: `hop/skills` / `gym`
+- Module/binary: `github.com/hop-top/gym` / `gym`
 - Validation gate: `skills-ref test`
 - Supports curated registries and direct URL installs
 - XDG-first paths with user + project hierarchical config
@@ -12,12 +12,19 @@ Universal package manager for [agentskills.io](https://agentskills.io) skills.
 ## Install / Build
 
 ```bash
+go install github.com/hop-top/gym/cmd/gym@latest
+```
+
+Build from source:
+
+```bash
 go build -o gym ./cmd/gym
 ```
 
 ## Commands
 
 ```bash
+gym version
 gym update
 gym install [--global|--project] [--path NAME_OR_PATH] <skill-or-url> [...]
 gym upgrade [--no-global] [pattern ...]
@@ -92,8 +99,8 @@ gym serve --stop --host 127.0.0.1 --port 4873
 ## Configuration
 
 User config (XDG):
-- `$XDG_CONFIG_HOME/skills/config.json`
-- fallback: `~/.config/skills/config.json`
+- `$XDG_CONFIG_HOME/gym/config.json`
+- fallback: `~/.config/gym/config.json`
 
 Project config:
 - `<project-root>/.gym/config.json`
@@ -102,10 +109,10 @@ Project state:
 - `<project-root>/.gym/installed.json`
 
 Global state:
-- `$XDG_STATE_HOME/skills/installed-global.json`
+- `$XDG_STATE_HOME/gym/installed-global.json`
 
 Local registry index cache:
-- `$XDG_DATA_HOME/skills/registry-index.json`
+- `$XDG_DATA_HOME/gym/registry-index.json`
 
 ### Example `config.json`
 
@@ -164,3 +171,7 @@ Curation labeling rules:
 ```bash
 go test ./...
 ```
+
+## Contributing
+
+See `CONTRIBUTING.md`.

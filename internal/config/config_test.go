@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hop/skills/internal/config"
+	"github.com/hop-top/gym/internal/config"
 )
 
 func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 	home := t.TempDir()
 	projectRoot := t.TempDir()
 
-	userCfgDir := filepath.Join(home, ".config", "skills")
+	userCfgDir := filepath.Join(home, ".config", "gym")
 	if err := os.MkdirAll(userCfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

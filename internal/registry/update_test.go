@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"hop/skills/internal/registry"
+	"github.com/hop-top/gym/internal/registry"
 )
 
 type fakeFetcher struct {

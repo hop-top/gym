@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"hop/skills/internal/config"
+	"github.com/hop-top/gym/internal/config"
 )
 
 func (a *App) cmdCoach(args []string) error {

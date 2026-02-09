@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"hop/skills/internal/project"
-	"hop/skills/internal/xdg"
+	"github.com/hop-top/gym/internal/project"
+	"github.com/hop-top/gym/internal/xdg"
 )
 
-const AppName = "skills"
+const AppName = "gym"
 
 // RepositoryConfig configures a registry source.
 type RepositoryConfig struct {

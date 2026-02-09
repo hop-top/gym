@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hop/skills/internal/project"
+	"github.com/hop-top/gym/internal/project"
 )
 
 func TestDetectRootFindsNearestProjectConfig(t *testing.T) {

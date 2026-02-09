@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hop/skills/internal/config"
-	"hop/skills/internal/install"
+	"github.com/hop-top/gym/internal/config"
+	"github.com/hop-top/gym/internal/install"
 )
 
 func TestValidateSkillPackagePasses(t *testing.T) {

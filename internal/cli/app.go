@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"hop/skills/internal/config"
-	"hop/skills/internal/ide"
-	"hop/skills/internal/install"
-	"hop/skills/internal/project"
-	"hop/skills/internal/registry"
-	"hop/skills/internal/state"
-	"hop/skills/internal/upgrade"
-	"hop/skills/internal/xdg"
+	"github.com/hop-top/gym/internal/config"
+	"github.com/hop-top/gym/internal/ide"
+	"github.com/hop-top/gym/internal/install"
+	"github.com/hop-top/gym/internal/project"
+	"github.com/hop-top/gym/internal/registry"
+	"github.com/hop-top/gym/internal/state"
+	"github.com/hop-top/gym/internal/upgrade"
+	"github.com/hop-top/gym/internal/xdg"
 )
 
 // App handles the CLI and interactive modes.
@@ -76,6 +76,7 @@ func usage() string {
 	return `gym - universal skill package manager
 
 Usage:
+  gym version
   gym update
   gym install [--global|--project] [--path NAME_OR_PATH] <skill-or-url> [...]
   gym upgrade [--no-global] [pattern ...]
@@ -105,6 +106,8 @@ func (a *App) Run(args []string) int {
 
 func (a *App) exec(args []string) error {
 	switch args[0] {
+	case "version", "-v", "--version":
+		return a.cmdVersion()
 	case "update":
 		return a.cmdUpdate(args[1:])
 	case "install":

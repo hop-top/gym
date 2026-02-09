@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hop/skills/internal/config"
+	"github.com/hop-top/gym/internal/config"
 )
 
 func TestAddInstallPathUserWritesToXDGConfig(t *testing.T) {

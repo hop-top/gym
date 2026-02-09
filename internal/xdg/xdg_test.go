@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hop/skills/internal/xdg"
+	"github.com/hop-top/gym/internal/xdg"
 )
 
 func TestAppDirsUsesXDGEnv(t *testing.T) {

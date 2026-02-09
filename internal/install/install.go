@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"hop/skills/internal/config"
-	"hop/skills/internal/fsutil"
-	"hop/skills/internal/ide"
-	"hop/skills/internal/registry"
-	"hop/skills/internal/state"
+	"github.com/hop-top/gym/internal/config"
+	"github.com/hop-top/gym/internal/fsutil"
+	"github.com/hop-top/gym/internal/ide"
+	"github.com/hop-top/gym/internal/registry"
+	"github.com/hop-top/gym/internal/state"
 )
 
 // Request holds installation inputs.

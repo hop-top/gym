@@ -1,4 +1,4 @@
-module hop/skills
+module github.com/hop-top/gym
 
 go 1.23.0
 

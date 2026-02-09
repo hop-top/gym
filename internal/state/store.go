@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"hop/skills/internal/project"
+	"github.com/hop-top/gym/internal/project"
 )
 
 // InstalledSkill tracks an installed skill and origin metadata.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"hop/skills/internal/registry"
+	"github.com/hop-top/gym/internal/registry"
 )
 
 // Options configures the serve handlers.
