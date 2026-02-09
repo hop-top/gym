@@ -1,0 +1,23 @@
+{
+  "repository": {
+    "name": "acme-skills",
+    "stars": 123,
+    "curated": false,
+    "curated_early": false
+  },
+  "skills": [
+    {
+      "name": "acme-auth",
+      "version": "1.2.0",
+      "source_url": "https://github.com/acme/acme-auth-skill.git",
+      "path": "skill",
+      "description": "Authentication workflows"
+    },
+    {
+      "name": "acme-monitoring",
+      "version": "0.9.1",
+      "source_url": "https://github.com/acme/acme-monitoring-skill.git",
+      "description": "Monitoring and alerting skill"
+    }
+  ]
+}
