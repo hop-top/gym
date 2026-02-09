@@ -3,8 +3,8 @@ package upgrade_test
 import (
 	"testing"
 
-	"github.com/hop-top/gym/internal/state"
-	"github.com/hop-top/gym/internal/upgrade"
+	"hop.top/gym/internal/state"
+	"hop.top/gym/internal/upgrade"
 )
 
 func names(plans []upgrade.PlanItem) []string {

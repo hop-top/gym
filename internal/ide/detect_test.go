@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hop-top/gym/internal/ide"
+	"hop.top/gym/internal/ide"
 )
 
 func TestDetectExistingGlobalPaths(t *testing.T) {

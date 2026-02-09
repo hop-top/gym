@@ -41,10 +41,8 @@ jobs:
               <meta name="viewport" content="width=device-width,initial-scale=1" />
 
               <meta name="go-import" content="hop.top/gym git https://github.com/hop-top/gym" />
-              <meta name="go-import" content="gym.hop.top git https://github.com/hop-top/gym" />
 
               <meta name="go-source" content="hop.top/gym https://github.com/hop-top/gym https://github.com/hop-top/gym/tree/main{/dir} https://github.com/hop-top/gym/blob/main{/dir}/{file}#L{line}" />
-              <meta name="go-source" content="gym.hop.top https://github.com/hop-top/gym https://github.com/hop-top/gym/tree/main{/dir} https://github.com/hop-top/gym/blob/main{/dir}/{file}#L{line}" />
 
               <script>
                 (function () {

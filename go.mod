@@ -1,4 +1,4 @@
-module github.com/hop-top/gym
+module hop.top/gym
 
 go 1.23.0
 

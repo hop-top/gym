@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hop-top/gym/internal/registry"
-	"github.com/hop-top/gym/internal/serve"
+	"hop.top/gym/internal/registry"
+	"hop.top/gym/internal/serve"
 )
 
 func sanitizeForFilename(s string) string {

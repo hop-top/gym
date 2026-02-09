@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/hop-top/gym/internal/cli"
+	"hop.top/gym/internal/cli"
 )
 
 func main() {

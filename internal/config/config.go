@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hop-top/gym/internal/project"
-	"github.com/hop-top/gym/internal/xdg"
+	"hop.top/gym/internal/project"
+	"hop.top/gym/internal/xdg"
 )
 
 const AppName = "gym"

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hop-top/gym/internal/registry"
-	"github.com/hop-top/gym/internal/serve"
+	"hop.top/gym/internal/registry"
+	"hop.top/gym/internal/serve"
 )
 
 func writeIndex(t *testing.T, dataHome string, skills []registry.SkillEntry) {

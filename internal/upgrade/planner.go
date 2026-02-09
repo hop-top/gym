@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/hop-top/gym/internal/state"
+	"hop.top/gym/internal/state"
 )
 
 // Input defines all policy-relevant information for upgrade planning.

@@ -5,7 +5,7 @@
 ## Install
 
 ```bash
-go install github.com/hop-top/gym/cmd/gym@latest
+go install hop.top/gym/cmd/gym@latest
 ```
 
 Build from source:
@@ -163,4 +163,3 @@ Endpoints:
 - Global state: `$XDG_STATE_HOME/gym/installed-global.json`
 - Project state: `<project-root>/.gym/installed.json`
 - Local registry cache: `$XDG_DATA_HOME/gym/registry-index.json`
-

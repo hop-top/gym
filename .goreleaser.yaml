@@ -23,9 +23,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/hop-top/gym/internal/cli.buildVersion={{.Version}}
-        -X github.com/hop-top/gym/internal/cli.buildCommit={{.Commit}}
-        -X github.com/hop-top/gym/internal/cli.buildDate={{.Date}}
+        -X hop.top/gym/internal/cli.buildVersion={{.Version}}
+        -X hop.top/gym/internal/cli.buildCommit={{.Commit}}
+        -X hop.top/gym/internal/cli.buildDate={{.Date}}
 
 archives:
   - format: tar.gz

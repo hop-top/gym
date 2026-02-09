@@ -90,7 +90,7 @@ Upgrade selection is planned in `internal/upgrade.Plan`:
 
 ## Vanity Go Module (Cloudflare Pages)
 
-If you want a vanity module path like `gym.hop.top` or `hop.top/gym`, you must serve `go-import` metadata at that URL.
+If you want a vanity module path like `hop.top/gym`, you must serve `go-import` metadata at that URL.
 
 This repo includes a workflow that publishes a minimal Cloudflare Pages site to a detached website branch:
 - workflow: `.github/workflows/publish.yml`

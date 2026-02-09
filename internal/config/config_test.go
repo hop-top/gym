@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hop-top/gym/internal/config"
+	"hop.top/gym/internal/config"
 )
 
 func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {

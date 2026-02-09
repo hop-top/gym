@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hop-top/gym/internal/config"
-	"github.com/hop-top/gym/internal/ide"
-	"github.com/hop-top/gym/internal/install"
-	"github.com/hop-top/gym/internal/project"
-	"github.com/hop-top/gym/internal/registry"
-	"github.com/hop-top/gym/internal/state"
-	"github.com/hop-top/gym/internal/upgrade"
-	"github.com/hop-top/gym/internal/xdg"
+	"hop.top/gym/internal/config"
+	"hop.top/gym/internal/ide"
+	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/project"
+	"hop.top/gym/internal/registry"
+	"hop.top/gym/internal/state"
+	"hop.top/gym/internal/upgrade"
+	"hop.top/gym/internal/xdg"
 )
 
 // App handles the CLI and interactive modes.

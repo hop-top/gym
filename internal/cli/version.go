@@ -67,6 +67,6 @@ func (a *App) cmdVersion() error {
 // VersionLDFlags returns ldflags suitable for embedding build metadata.
 // This is a helper for docs/tooling; it is not used by the CLI itself.
 func VersionLDFlags(version, commit, date string) string {
-	pkg := "github.com/hop-top/gym/internal/cli"
+	pkg := "hop.top/gym/internal/cli"
 	return fmt.Sprintf("-X %s.buildVersion=%s -X %s.buildCommit=%s -X %s.buildDate=%s", pkg, version, pkg, commit, pkg, date)
 }
