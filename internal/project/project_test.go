@@ -10,7 +10,7 @@ import (
 
 func TestDetectRootFindsNearestProjectConfig(t *testing.T) {
 	root := t.TempDir()
-	cfgDir := filepath.Join(root, ".skills")
+	cfgDir := filepath.Join(root, ".gym")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

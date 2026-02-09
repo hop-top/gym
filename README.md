@@ -21,9 +21,9 @@ go build -o gym ./cmd/gym
 gym update
 gym install [--global|--project] [--path NAME_OR_PATH] <skill-or-url> [...]
 gym upgrade [--no-global] [pattern ...]
-gym sources add [--project] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
-gym sources list
-gym sources remove [--project] [--no-update] <name|url>
+gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
+gym coach list
+gym coach dismiss [--global|-g] [--no-update] <name|url>
 gym paths
 gym paths add [--scope global|project] [--target user|project] [--name NAME] --path PATH
 gym serve [--host 127.0.0.1] [--port 4873] [--daemon] [--pidfile PATH] [--logfile PATH]
@@ -96,10 +96,10 @@ User config (XDG):
 - fallback: `~/.config/skills/config.json`
 
 Project config:
-- `<project-root>/.skills/config.json`
+- `<project-root>/.gym/config.json`
 
 Project state:
-- `<project-root>/.skills/installed.json`
+- `<project-root>/.gym/installed.json`
 
 Global state:
 - `$XDG_STATE_HOME/skills/installed-global.json`

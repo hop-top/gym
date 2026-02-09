@@ -6,13 +6,13 @@ import (
 )
 
 const (
-	ProjectDirName    = ".skills"
+	ProjectDirName    = ".gym"
 	ProjectConfigFile = "config.json"
 	ProjectStateFile  = "installed.json"
 )
 
 // DetectRoot walks upward from startDir and finds the nearest project root.
-// A project root is detected when .skills/config.json or .skills/installed.json exists.
+// A project root is detected when .gym/config.json or .gym/installed.json exists.
 func DetectRoot(startDir string) (string, bool) {
 	cur, err := filepath.Abs(startDir)
 	if err != nil {
@@ -42,7 +42,7 @@ func dirExists(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-// EnsureProjectDir makes sure .skills exists at project root.
+// EnsureProjectDir makes sure .gym exists at project root.
 func EnsureProjectDir(projectRoot string) (string, error) {
 	p := filepath.Join(projectRoot, ProjectDirName)
 	if err := os.MkdirAll(p, 0o755); err != nil {

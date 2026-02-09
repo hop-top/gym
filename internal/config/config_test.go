@@ -26,7 +26,7 @@ func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projCfgDir := filepath.Join(projectRoot, ".skills")
+	projCfgDir := filepath.Join(projectRoot, ".gym")
 	if err := os.MkdirAll(projCfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

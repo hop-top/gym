@@ -16,21 +16,21 @@ import (
 	"hop/skills/internal/config"
 )
 
-func (a *App) cmdSources(args []string) error {
+func (a *App) cmdCoach(args []string) error {
 	if len(args) == 0 {
-		return a.cmdSourcesList()
+		return a.cmdCoachList()
 	}
 
 	sub := args[0]
 	switch sub {
-	case "add":
-		return a.cmdSourcesAdd(args[1:])
+	case "hire":
+		return a.cmdCoachHire(args[1:])
 	case "list", "ls":
-		return a.cmdSourcesList()
-	case "remove", "rm":
-		return a.cmdSourcesRemove(args[1:])
+		return a.cmdCoachList()
+	case "dismiss", "rm":
+		return a.cmdCoachDismiss(args[1:])
 	default:
-		return fmt.Errorf("unknown sources subcommand %q", sub)
+		return fmt.Errorf("unknown coach subcommand %q", sub)
 	}
 }
 
@@ -142,20 +142,21 @@ func deriveSourceName(urlOrRef string) string {
 	return "source"
 }
 
-func (a *App) cmdSourcesAdd(args []string) error {
-	fs := flag.NewFlagSet("sources add", flag.ContinueOnError)
+func (a *App) cmdCoachHire(args []string) error {
+	fs := flag.NewFlagSet("coach hire", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	projectTarget := fs.Bool("project", false, "write to project config")
-	name := fs.String("name", "", "source name")
-	curated := fs.Bool("curated", false, "mark source as curated")
-	noUpdate := fs.Bool("no-update", false, "do not run gym update after adding")
-	force := fs.Bool("force", false, "add even if manifest cannot be fetched/validated")
+	globalTarget := fs.Bool("global", false, "write to global (user) config")
+	globalShort := fs.Bool("g", false, "alias for --global")
+	name := fs.String("name", "", "coach name")
+	curated := fs.Bool("curated", false, "mark coach as curated")
+	noUpdate := fs.Bool("no-update", false, "do not run gym update after hiring")
+	force := fs.Bool("force", false, "hire even if manifest cannot be fetched/validated")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	pos := fs.Args()
 	if len(pos) != 1 {
-		return errors.New("sources add requires exactly one manifest url or owner/repo")
+		return errors.New("coach hire requires exactly one manifest url or owner/repo")
 	}
 	ref := strings.TrimSpace(pos[0])
 	cands, err := manifestCandidates(ref)
@@ -184,25 +185,27 @@ func (a *App) cmdSourcesAdd(args []string) error {
 		selected = cands[0]
 	}
 
-	srcName := strings.TrimSpace(*name)
-	if srcName == "" {
+	isGlobal := *globalTarget || *globalShort
+
+	coachName := strings.TrimSpace(*name)
+	if coachName == "" {
 		if info.Name != "" {
-			srcName = info.Name
+			coachName = info.Name
 		} else {
-			srcName = deriveSourceName(ref)
+			coachName = deriveSourceName(ref)
 		}
 	}
 
-	target := "user"
-	if *projectTarget {
-		target = "project"
+	target := "project"
+	if isGlobal {
+		target = "user"
 	}
 
-	cfgPath, err := config.AddRepository(a.CWD, target, config.RepositoryConfig{Name: srcName, URL: selected, Curated: *curated})
+	cfgPath, err := config.AddRepository(a.CWD, target, config.RepositoryConfig{Name: coachName, URL: selected, Curated: *curated})
 	if err != nil {
 		return err
 	}
-	a.printlnf("added source %q -> %s", srcName, selected)
+	a.printlnf("hired coach %q -> %s", coachName, selected)
 	a.printlnf("updated config: %s", cfgPath)
 	if *noUpdate {
 		return nil
@@ -210,7 +213,7 @@ func (a *App) cmdSourcesAdd(args []string) error {
 	return a.cmdUpdate(nil)
 }
 
-func (a *App) cmdSourcesList() error {
+func (a *App) cmdCoachList() error {
 	userPath, userRepos, userOK, err := config.LoadUserRepositories()
 	if err != nil {
 		return err
@@ -221,7 +224,7 @@ func (a *App) cmdSourcesList() error {
 	}
 
 	if userOK {
-		a.printlnf("user sources (%s):", userPath)
+		a.printlnf("user coaches (%s):", userPath)
 		if len(userRepos) == 0 {
 			a.printlnf("  - none")
 		}
@@ -233,11 +236,11 @@ func (a *App) cmdSourcesList() error {
 			a.printlnf("  - %s%s: %s", r.Name, flag, r.URL)
 		}
 	} else {
-		a.printlnf("user sources: none (%s not found)", userPath)
+		a.printlnf("user coaches: none (%s not found)", userPath)
 	}
 
 	if projOK {
-		a.printlnf("project sources (%s):", projPath)
+		a.printlnf("project coaches (%s):", projPath)
 		if len(projRepos) == 0 {
 			a.printlnf("  - none")
 		}
@@ -253,23 +256,24 @@ func (a *App) cmdSourcesList() error {
 	return nil
 }
 
-func (a *App) cmdSourcesRemove(args []string) error {
-	fs := flag.NewFlagSet("sources remove", flag.ContinueOnError)
+func (a *App) cmdCoachDismiss(args []string) error {
+	fs := flag.NewFlagSet("coach dismiss", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	projectTarget := fs.Bool("project", false, "remove from project config")
-	noUpdate := fs.Bool("no-update", false, "do not run gym update after removing")
+	globalTarget := fs.Bool("global", false, "dismiss from global (user) config")
+	globalShort := fs.Bool("g", false, "alias for --global")
+	noUpdate := fs.Bool("no-update", false, "do not run gym update after dismissing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	pos := fs.Args()
 	if len(pos) != 1 {
-		return errors.New("sources remove requires exactly one selector (name or url)")
+		return errors.New("coach dismiss requires exactly one selector (name or url)")
 	}
 	selector := strings.TrimSpace(pos[0])
 
-	target := "user"
-	if *projectTarget {
-		target = "project"
+	target := "project"
+	if *globalTarget || *globalShort {
+		target = "user"
 	}
 
 	cfgPath, removed, err := config.RemoveRepository(a.CWD, target, selector)
@@ -277,10 +281,10 @@ func (a *App) cmdSourcesRemove(args []string) error {
 		return err
 	}
 	if removed == 0 {
-		a.printlnf("no sources matched %q", selector)
+		a.printlnf("no coaches matched %q", selector)
 		return nil
 	}
-	a.printlnf("removed %d source(s) matching %q", removed, selector)
+	a.printlnf("dismissed %d coach(es) matching %q", removed, selector)
 	a.printlnf("updated config: %s", cfgPath)
 	if *noUpdate {
 		return nil

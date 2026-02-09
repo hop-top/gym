@@ -48,7 +48,7 @@ func TestAddInstallPathProjectWritesToProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddInstallPath() error = %v", err)
 	}
-	if want := filepath.Join(root, ".skills", "config.json"); cfgPath != want {
+	if want := filepath.Join(root, ".gym", "config.json"); cfgPath != want {
 		t.Fatalf("cfgPath = %q, want %q", cfgPath, want)
 	}
 	if _, err := os.Stat(cfgPath); err != nil {
