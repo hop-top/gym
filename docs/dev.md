@@ -88,6 +88,23 @@ Upgrade selection is planned in `internal/upgrade.Plan`:
   - tag `vX.Y.Z` triggers `.github/workflows/release.yml`
   - `.goreleaser.yaml` injects version/commit/date into `internal/cli`
 
+## Vanity Go Module (Cloudflare Pages)
+
+If you want a vanity module path like `gym.hop.top` or `hop.top/gym`, you must serve `go-import` metadata at that URL.
+
+This repo includes a workflow that publishes a minimal Cloudflare Pages site to a detached website branch:
+- workflow: `.github/workflows/publish.yml`
+- branch: `gh-pages`
+
+Cloudflare Pages config:
+- production branch: `gh-pages`
+- output directory: `.`
+- attach custom domain(s) as needed
+
+The published site is static:
+- `_redirects` rewrites all paths to `index.html` (so `.../cmd/gym?go-get=1` works)
+- `index.html` includes `go-import` metadata and JS-redirects humans to GitHub
+
 ## CI
 
 `.github/workflows/ci.yml` enforces:
@@ -95,4 +112,3 @@ Upgrade selection is planned in `internal/upgrade.Plan`:
 - `gofmt` clean
 - `go test ./...`
 - `go vet ./...`
-
