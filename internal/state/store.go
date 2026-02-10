@@ -32,13 +32,19 @@ type projectStore struct {
 func dedupe(skills []InstalledSkill) []InstalledSkill {
 	m := make(map[string]InstalledSkill, len(skills))
 	for _, s := range skills {
-		m[s.Name] = s
+		key := s.Name + "::" + s.InstallPath
+		m[key] = s
 	}
 	out := make([]InstalledSkill, 0, len(m))
 	for _, s := range m {
 		out = append(out, s)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].InstallPath < out[j].InstallPath
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out
 }
 
@@ -103,7 +109,7 @@ func SaveProject(projectRoot string, skills []InstalledSkill) error {
 func Upsert(skills []InstalledSkill, item InstalledSkill) []InstalledSkill {
 	found := false
 	for i := range skills {
-		if skills[i].Name == item.Name {
+		if skills[i].Name == item.Name && skills[i].InstallPath == item.InstallPath {
 			skills[i] = item
 			found = true
 			break
