@@ -18,7 +18,7 @@ type replModel struct {
 func newREPLModel(app *App) replModel {
 	in := textinput.New()
 	in.Prompt = "gym> "
-	in.Placeholder = "type update | install <name/url> | upgrade [pattern] | paths | exit"
+	in.Placeholder = "type update | learn <name/url> | train [pattern] | paths | exit"
 	in.Focus()
 	return replModel{app: app, input: in, history: []string{"repl started", "type `exit` to quit"}}
 }

@@ -3,9 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +16,19 @@ import (
 	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/serve"
 )
+
+type serveOptions struct {
+	Host         string
+	Port         int
+	Daemon       bool
+	PidFile      string
+	LogFile      string
+	Name         string
+	Update       bool
+	RefreshEvery time.Duration
+	Stop         bool
+	Status       bool
+}
 
 func sanitizeForFilename(s string) string {
 	if s == "" {
@@ -83,30 +94,23 @@ func (a *App) updateIndexOnce(ctx context.Context, rt runtime) error {
 	return registry.SaveIndex(rt.Dirs.DataHome, newIdx)
 }
 
-func (a *App) cmdServe(args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	bindHost := fs.String("host", "127.0.0.1", "bind host")
-	bindPort := fs.Int("port", 4873, "bind port")
-	daemon := fs.Bool("daemon", false, "run in background")
-	pidFile := fs.String("pidfile", "", "pid file path")
-	logFile := fs.String("logfile", "", "log file path (daemon)")
-	name := fs.String("name", "gym-registry", "repository.name for /skills.json")
-	update := fs.Bool("update", false, "update registry index on start")
-	refreshEvery := fs.Duration("refresh", 0, "periodically update registry index (e.g. 10m); implies --update")
-	stop := fs.Bool("stop", false, "stop daemon using pidfile")
-	status := fs.Bool("status", false, "show daemon status using pidfile")
-
-	if err := fs.Parse(args); err != nil {
-		return err
+func (a *App) runServe(opts serveOptions) error {
+	if opts.Host == "" {
+		opts.Host = "127.0.0.1"
 	}
-	if *bindPort < 0 || *bindPort > 65535 {
-		return fmt.Errorf("invalid --port %d", *bindPort)
+	if opts.Port == 0 {
+		opts.Port = 4873
 	}
-	if *refreshEvery > 0 {
-		*update = true
+	if opts.Name == "" {
+		opts.Name = "gym-registry"
 	}
-	if (*stop && *status) || (*daemon && *stop) || (*daemon && *status) {
+	if opts.Port < 0 || opts.Port > 65535 {
+		return fmt.Errorf("invalid --port %d", opts.Port)
+	}
+	if opts.RefreshEvery > 0 {
+		opts.Update = true
+	}
+	if (opts.Stop && opts.Status) || (opts.Daemon && opts.Stop) || (opts.Daemon && opts.Status) {
 		return fmt.Errorf("--daemon, --stop, and --status are mutually exclusive")
 	}
 
@@ -115,23 +119,23 @@ func (a *App) cmdServe(args []string) error {
 		return err
 	}
 
-	if *pidFile == "" {
-		*pidFile = defaultPidFile(rt.Dirs.StateHome, *bindHost, *bindPort)
+	if opts.PidFile == "" {
+		opts.PidFile = defaultPidFile(rt.Dirs.StateHome, opts.Host, opts.Port)
 	}
-	if *logFile == "" {
-		*logFile = defaultLogFile(rt.Dirs.StateHome, *bindHost, *bindPort)
+	if opts.LogFile == "" {
+		opts.LogFile = defaultLogFile(rt.Dirs.StateHome, opts.Host, opts.Port)
 	}
 
-	if *stop {
-		msg, err := stopByPIDFile(*pidFile)
+	if opts.Stop {
+		msg, err := stopByPIDFile(opts.PidFile)
 		if err != nil {
 			return err
 		}
 		a.printlnf("%s", msg)
 		return nil
 	}
-	if *status {
-		msg, err := statusByPIDFile(*pidFile)
+	if opts.Status {
+		msg, err := statusByPIDFile(opts.PidFile)
 		if err != nil {
 			return err
 		}
@@ -139,38 +143,38 @@ func (a *App) cmdServe(args []string) error {
 		return nil
 	}
 
-	if *daemon {
+	if opts.Daemon {
 		exe, err := os.Executable()
 		if err != nil {
 			return err
 		}
-		childArgs := []string{"serve", "--host", *bindHost, "--port", strconv.Itoa(*bindPort), "--pidfile", *pidFile, "--logfile", *logFile, "--name", *name}
-		if *update {
+		childArgs := []string{"serve", "--host", opts.Host, "--port", strconv.Itoa(opts.Port), "--pidfile", opts.PidFile, "--logfile", opts.LogFile, "--name", opts.Name}
+		if opts.Update {
 			childArgs = append(childArgs, "--update")
 		}
-		if *refreshEvery > 0 {
-			childArgs = append(childArgs, "--refresh", refreshEvery.String())
+		if opts.RefreshEvery > 0 {
+			childArgs = append(childArgs, "--refresh", opts.RefreshEvery.String())
 		}
 
-		pid, err := daemonize(exe, childArgs, *logFile)
+		pid, err := daemonize(exe, childArgs, opts.LogFile)
 		if err != nil {
 			return err
 		}
 		a.printlnf("started daemon pid %d", pid)
-		a.printlnf("pidfile: %s", *pidFile)
-		a.printlnf("logfile: %s", *logFile)
+		a.printlnf("pidfile: %s", opts.PidFile)
+		a.printlnf("logfile: %s", opts.LogFile)
 		return nil
 	}
 
 	ctx := context.Background()
-	if *update {
+	if opts.Update {
 		if err := a.updateIndexOnce(ctx, rt); err != nil {
 			return err
 		}
 	}
 
-	if *refreshEvery > 0 {
-		ticker := time.NewTicker(*refreshEvery)
+	if opts.RefreshEvery > 0 {
+		ticker := time.NewTicker(opts.RefreshEvery)
 		defer ticker.Stop()
 		go func() {
 			for range ticker.C {
@@ -181,19 +185,19 @@ func (a *App) cmdServe(args []string) error {
 		}()
 	}
 
-	addr := net.JoinHostPort(*bindHost, strconv.Itoa(*bindPort))
+	addr := net.JoinHostPort(opts.Host, strconv.Itoa(opts.Port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
 
-	if err := writePID(*pidFile, os.Getpid()); err != nil {
+	if err := writePID(opts.PidFile, os.Getpid()); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(*pidFile) }()
+	defer func() { _ = os.Remove(opts.PidFile) }()
 
-	s := &http.Server{Handler: serve.Handler(serve.Options{DataHome: rt.Dirs.DataHome, Name: *name})}
+	s := &http.Server{Handler: serve.Handler(serve.Options{DataHome: rt.Dirs.DataHome, Name: opts.Name})}
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.Serve(ln) }()
 

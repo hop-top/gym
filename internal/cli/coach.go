@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,24 +13,6 @@ import (
 
 	"hop.top/gym/internal/config"
 )
-
-func (a *App) cmdCoach(args []string) error {
-	if len(args) == 0 {
-		return a.cmdCoachList()
-	}
-
-	sub := args[0]
-	switch sub {
-	case "hire":
-		return a.cmdCoachHire(args[1:])
-	case "list", "ls":
-		return a.cmdCoachList()
-	case "dismiss", "rm":
-		return a.cmdCoachDismiss(args[1:])
-	default:
-		return fmt.Errorf("unknown coach subcommand %q", sub)
-	}
-}
 
 type manifestInfo struct {
 	Name string
@@ -142,23 +122,11 @@ func deriveSourceName(urlOrRef string) string {
 	return "source"
 }
 
-func (a *App) cmdCoachHire(args []string) error {
-	fs := flag.NewFlagSet("coach hire", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	globalTarget := fs.Bool("global", false, "write to global (user) config")
-	globalShort := fs.Bool("g", false, "alias for --global")
-	name := fs.String("name", "", "coach name")
-	curated := fs.Bool("curated", false, "mark coach as curated")
-	noUpdate := fs.Bool("no-update", false, "do not run gym update after hiring")
-	force := fs.Bool("force", false, "hire even if manifest cannot be fetched/validated")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	pos := fs.Args()
-	if len(pos) != 1 {
+func (a *App) runCoachHire(global bool, name string, curated bool, noUpdate bool, force bool, ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
 		return errors.New("coach hire requires exactly one manifest url or owner/repo")
 	}
-	ref := strings.TrimSpace(pos[0])
 	cands, err := manifestCandidates(ref)
 	if err != nil {
 		return err
@@ -179,15 +147,12 @@ func (a *App) cmdCoachHire(args []string) error {
 		lastErr = err
 	}
 	if selected == "" {
-		if !*force {
+		if !force {
 			return fmt.Errorf("could not fetch/validate manifest (last error: %v); pass an explicit skills.json URL or use --force", lastErr)
 		}
 		selected = cands[0]
 	}
-
-	isGlobal := *globalTarget || *globalShort
-
-	coachName := strings.TrimSpace(*name)
+	coachName := strings.TrimSpace(name)
 	if coachName == "" {
 		if info.Name != "" {
 			coachName = info.Name
@@ -197,23 +162,23 @@ func (a *App) cmdCoachHire(args []string) error {
 	}
 
 	target := "project"
-	if isGlobal {
+	if global {
 		target = "user"
 	}
 
-	cfgPath, err := config.AddRepository(a.CWD, target, config.RepositoryConfig{Name: coachName, URL: selected, Curated: *curated})
+	cfgPath, err := config.AddRepository(a.CWD, target, config.RepositoryConfig{Name: coachName, URL: selected, Curated: curated})
 	if err != nil {
 		return err
 	}
 	a.printlnf("hired coach %q -> %s", coachName, selected)
 	a.printlnf("updated config: %s", cfgPath)
-	if *noUpdate {
+	if noUpdate {
 		return nil
 	}
-	return a.cmdUpdate(nil)
+	return a.runUpdate()
 }
 
-func (a *App) cmdCoachList() error {
+func (a *App) runCoachList() error {
 	userPath, userRepos, userOK, err := config.LoadUserRepositories()
 	if err != nil {
 		return err
@@ -256,23 +221,13 @@ func (a *App) cmdCoachList() error {
 	return nil
 }
 
-func (a *App) cmdCoachDismiss(args []string) error {
-	fs := flag.NewFlagSet("coach dismiss", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	globalTarget := fs.Bool("global", false, "dismiss from global (user) config")
-	globalShort := fs.Bool("g", false, "alias for --global")
-	noUpdate := fs.Bool("no-update", false, "do not run gym update after dismissing")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	pos := fs.Args()
-	if len(pos) != 1 {
+func (a *App) runCoachDismiss(global bool, noUpdate bool, selector string) error {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
 		return errors.New("coach dismiss requires exactly one selector (name or url)")
 	}
-	selector := strings.TrimSpace(pos[0])
-
 	target := "project"
-	if *globalTarget || *globalShort {
+	if global {
 		target = "user"
 	}
 
@@ -286,8 +241,8 @@ func (a *App) cmdCoachDismiss(args []string) error {
 	}
 	a.printlnf("dismissed %d coach(es) matching %q", removed, selector)
 	a.printlnf("updated config: %s", cfgPath)
-	if *noUpdate {
+	if noUpdate {
 		return nil
 	}
-	return a.cmdUpdate(nil)
+	return a.runUpdate()
 }

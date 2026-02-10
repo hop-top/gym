@@ -23,7 +23,7 @@ make fmt
 ## Architecture (packages)
 
 - `cmd/gym`: main entrypoint
-- `internal/cli`: command parsing + subcommands + TUI/REPL
+- `internal/cli`: Cobra command tree + Viper CLI config/env + TUI/REPL
 - `internal/config`: user/project config merge; mutation helpers
 - `internal/project`: project root detection; `.gym/` dir constants
 - `internal/registry`: `skills.json` fetch/merge; curated labeling; index store

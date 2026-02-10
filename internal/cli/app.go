@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -72,31 +71,8 @@ func (a *App) eprintf(format string, args ...any) {
 	fmt.Fprintf(a.Stderr, format+"\n", args...)
 }
 
-func usage() string {
-	return `gym - universal skill package manager
-
-Usage:
-  gym version
-  gym update
-  gym install [--global|--project] [--path NAME_OR_PATH] <skill-or-url> [...]
-  gym upgrade [--no-global] [pattern ...]
-  gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
-  gym coach list
-  gym coach dismiss [--global|-g] [--no-update] <name|url>
-  gym paths
-  gym paths add [--scope global|project] [--target user|project] [--name NAME] --path PATH
-  gym serve [--host 127.0.0.1] [--port 4873] [--daemon] [--pidfile PATH] [--logfile PATH]
-  gym tui
-  gym repl
-`
-}
-
 // Run executes the app and returns shell exit code.
 func (a *App) Run(args []string) int {
-	if len(args) == 0 {
-		a.printlnf("%s", usage())
-		return 0
-	}
 	if err := a.exec(args); err != nil {
 		a.eprintf("error: %v", err)
 		return 1
@@ -105,31 +81,7 @@ func (a *App) Run(args []string) int {
 }
 
 func (a *App) exec(args []string) error {
-	switch args[0] {
-	case "version", "-v", "--version":
-		return a.cmdVersion()
-	case "update":
-		return a.cmdUpdate(args[1:])
-	case "install":
-		return a.cmdInstall(args[1:])
-	case "upgrade":
-		return a.cmdUpgrade(args[1:])
-	case "coach":
-		return a.cmdCoach(args[1:])
-	case "paths":
-		return a.cmdPaths(args[1:])
-	case "serve":
-		return a.cmdServe(args[1:])
-	case "tui":
-		return a.cmdTUI()
-	case "repl":
-		return a.cmdREPL()
-	case "help", "-h", "--help":
-		a.printlnf("%s", usage())
-		return nil
-	default:
-		return fmt.Errorf("unknown command %q", args[0])
-	}
+	return a.execCobra(args)
 }
 
 func (a *App) registryConfigFrom(cfg config.Config) registry.Config {
@@ -140,13 +92,7 @@ func (a *App) registryConfigFrom(cfg config.Config) registry.Config {
 	return registry.Config{Repositories: repos, MinStarsForCurated: cfg.Curation.MinStars}
 }
 
-func (a *App) cmdUpdate(args []string) error {
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func (a *App) runUpdate() error {
 	rt, err := a.loadRuntime()
 	if err != nil {
 		return err
@@ -186,18 +132,9 @@ func inferNameFromToken(token string) string {
 	return b
 }
 
-func (a *App) cmdInstall(args []string) error {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	toGlobal := fs.Bool("global", false, "install globally")
-	toProject := fs.Bool("project", false, "install in current project")
-	pathHint := fs.String("path", "", "install path name/path override")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	tokens := fs.Args()
+func (a *App) runLearn(toGlobal bool, pathHint string, agentPatterns []string, tokens []string) error {
 	if len(tokens) == 0 {
-		return errors.New("install requires at least one skill name or URL")
+		return errors.New("learn requires at least one skill name or URL")
 	}
 
 	rt, err := a.loadRuntime()
@@ -209,13 +146,9 @@ func (a *App) cmdInstall(args []string) error {
 		return err
 	}
 
-	scope := "global"
-	if *toProject {
-		scope = "project"
-	} else if *toGlobal {
+	scope := "project"
+	if toGlobal {
 		scope = "global"
-	} else if rt.InProject {
-		scope = "project"
 	}
 
 	globalSkills, err := state.LoadGlobal(rt.Dirs.StateHome)
@@ -223,11 +156,8 @@ func (a *App) cmdInstall(args []string) error {
 		return err
 	}
 	projectSkills := []state.InstalledSkill(nil)
-	projectRoot := rt.ProjectRoot
+	projectRoot := a.CWD
 	if scope == "project" {
-		if projectRoot == "" {
-			projectRoot = a.CWD
-		}
 		projectSkills, err = state.LoadProject(projectRoot)
 		if err != nil {
 			return err
@@ -241,30 +171,33 @@ func (a *App) cmdInstall(args []string) error {
 		} else {
 			resolved, ok := idx.Find(tok)
 			if !ok {
-				return fmt.Errorf("skill %q not found in local registry; run `gym update` or install by URL", tok)
+				return fmt.Errorf("skill %q not found in local registry; run `gym update` or use `gym learn` with a URL", tok)
 			}
 			entry = resolved
 		}
 
-		installed, err := install.InstallSkill(context.Background(), install.Request{
-			Entry:       entry,
-			Source:      entry.SourceURL,
-			Scope:       scope,
-			PathHint:    *pathHint,
-			Config:      rt.Config,
-			ProjectRoot: projectRoot,
-			CWD:         a.CWD,
+		installedSet, err := install.InstallSkillMulti(context.Background(), install.Request{
+			Entry:         entry,
+			Source:        entry.SourceURL,
+			Scope:         scope,
+			PathHint:      pathHint,
+			AgentPatterns: agentPatterns,
+			Config:        rt.Config,
+			ProjectRoot:   projectRoot,
+			CWD:           a.CWD,
 		})
 		if err != nil {
 			return err
 		}
-		a.printlnf("installed %s %s -> %s", installed.Name, installed.Version, installed.InstallPath)
-
-		if scope == "global" {
-			globalSkills = state.Upsert(globalSkills, installed)
-		} else {
-			projectSkills = state.Upsert(projectSkills, installed)
+		for _, installed := range installedSet {
+			a.printlnf("installed %s %s -> %s", installed.Name, installed.Version, installed.InstallPath)
+			if scope == "global" {
+				globalSkills = state.Upsert(globalSkills, installed)
+			} else {
+				projectSkills = state.Upsert(projectSkills, installed)
+			}
 		}
+
 	}
 
 	if scope == "global" {
@@ -278,15 +211,7 @@ func isExistingDir(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-func (a *App) cmdUpgrade(args []string) error {
-	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	noGlobal := fs.Bool("no-global", false, "do not mirror global upgrades from project upgrades")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	patterns := fs.Args()
-
+func (a *App) runTrain(noGlobal bool, patterns []string) error {
 	rt, err := a.loadRuntime()
 	if err != nil {
 		return err
@@ -313,13 +238,13 @@ func (a *App) cmdUpgrade(args []string) error {
 	plan := upgrade.Plan(upgrade.Input{
 		InProjectWithSkills: inProjectWithSkills,
 		MirrorGlobal:        rt.Config.Upgrade.MirrorGlobalFromProject,
-		NoGlobal:            *noGlobal,
+		NoGlobal:            noGlobal,
 		Patterns:            patterns,
 		ProjectSkills:       projectSkills,
 		GlobalSkills:        globalSkills,
 	})
 	if len(plan) == 0 {
-		a.printlnf("no matching installed skills to upgrade")
+		a.printlnf("no matching installed skills to train")
 		return nil
 	}
 
@@ -335,10 +260,12 @@ func (a *App) cmdUpgrade(args []string) error {
 		if !registry.NewerThan(entry.Version, item.Skill.Version) {
 			continue
 		}
+		pathHint := filepath.Dir(item.Skill.InstallPath)
 		installed, err := install.InstallSkill(context.Background(), install.Request{
 			Entry:       entry,
 			Source:      entry.SourceURL,
 			Scope:       item.Scope,
+			PathHint:    pathHint,
 			Config:      rt.Config,
 			ProjectRoot: projectRoot,
 			CWD:         a.CWD,
@@ -377,19 +304,7 @@ func (a *App) cmdUpgrade(args []string) error {
 	return nil
 }
 
-func (a *App) cmdPaths(args []string) error {
-	if len(args) > 0 && args[0] == "add" {
-		return a.cmdPathsAdd(args[1:])
-	}
-	fs := flag.NewFlagSet("paths", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	return a.cmdPathsList()
-}
-
-func (a *App) cmdPathsList() error {
+func (a *App) runPathsList() error {
 	rt, err := a.loadRuntime()
 	if err != nil {
 		return err
@@ -429,17 +344,8 @@ func defaultPathName(path, scope string) string {
 	return b + "-" + scope
 }
 
-func (a *App) cmdPathsAdd(args []string) error {
-	fs := flag.NewFlagSet("paths add", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	name := fs.String("name", "", "path alias name")
-	scope := fs.String("scope", "global", "global|project")
-	pathVal := fs.String("path", "", "filesystem path")
-	target := fs.String("target", "", "config target: user|project")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *scope != "global" && *scope != "project" {
+func (a *App) runPathsAdd(scope, pathVal, name, target string) error {
+	if scope != "global" && scope != "project" {
 		return fmt.Errorf("scope must be global or project")
 	}
 
@@ -447,8 +353,8 @@ func (a *App) cmdPathsAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *pathVal == "" {
-		if *scope == "global" {
+	if pathVal == "" {
+		if scope == "global" {
 			home := os.Getenv("HOME")
 			a.printlnf("choose one of these detected/known global paths with --path:")
 			for _, p := range ide.DetectExistingGlobalPaths(home) {
@@ -469,25 +375,25 @@ func (a *App) cmdPathsAdd(args []string) error {
 		}
 		return nil
 	}
-	if *target == "" {
-		if *scope == "project" {
-			*target = "project"
+	if target == "" {
+		if scope == "project" {
+			target = "project"
 		} else {
-			*target = "user"
+			target = "user"
 		}
 	}
-	if *name == "" {
-		*name = defaultPathName(*pathVal, *scope)
+	if name == "" {
+		name = defaultPathName(pathVal, scope)
 	}
-	cfgPath, err := config.AddInstallPath(a.CWD, *target, config.InstallPath{
-		Name:  *name,
-		Path:  *pathVal,
-		Scope: *scope,
+	cfgPath, err := config.AddInstallPath(a.CWD, target, config.InstallPath{
+		Name:  name,
+		Path:  pathVal,
+		Scope: scope,
 	})
 	if err != nil {
 		return err
 	}
-	a.printlnf("added install path %s [%s] -> %s", *name, *scope, *pathVal)
+	a.printlnf("added install path %s [%s] -> %s", name, scope, pathVal)
 	a.printlnf("updated config: %s", cfgPath)
 	return nil
 }
