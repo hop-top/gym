@@ -26,8 +26,11 @@ go build -o gym ./cmd/gym
 ```bash
 gym version
 gym update
-gym install [--global|--project] [--path NAME_OR_PATH] <skill-or-url> [...]
-gym upgrade [--no-global] [pattern ...]
+gym learn [--global|-g] [--path NAME_OR_PATH] [--agent PATTERN ...] <skill-or-url> [...]
+gym train [--no-global] [pattern ...]
+gym install ...  # alias of learn
+gym upgrade ...  # alias of train
+gym warmup [--format xml|json|agents-md] [--scope all|global|project] [-o FILE]
 gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
 gym coach list
 gym coach dismiss [--global|-g] [--no-update] <name|url>
@@ -52,25 +55,49 @@ gym repl
 - new skills since last update (with origin)
 - installed-skill upgrade candidates by version
 
-### Install sources
+### Warmup (Progressive Disclosure)
 
-`gym install` supports:
+`gym warmup` generates lightweight skill metadata for context-efficient agent startup:
+- `--format xml` → `<available_skills>` XML for Claude Code
+- `--format json` → JSON array of skill metadata
+- `--format agents-md` → AGENTS.md format for multi-agent compatibility
+- `--scope all|global|project` → filter by install scope
+- `-o FILE` → write to file (default: stdout)
+
+Implements the agentskills.io progressive disclosure pattern: agents load only name+description at startup (~100 tokens), then fetch full skill content on-demand.
+
+### Learn sources
+
+`gym learn` supports:
 - skill names from local merged registry index
 - direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories
+- default target is project-local install in `CWD/.gym/skills`
+- use `--global` (or `-g`) for global install scope
+- if multiple install paths match the chosen scope, `gym learn` installs into all of them
+- use `--agent` patterns (or `--path`) to filter install targets
 
 Install only succeeds if validator passes (`skills-ref test {path}` by default).
 
-### Upgrade policy
+### Train policy
 
-- `gym upgrade` with no args upgrades all matching scope.
-- `gym upgrade name1 name2` upgrades named skills.
-- Patterns are accepted (`gym upgrade "auth-*"`).
+- `gym train` with no args upgrades all matching scope.
+- `gym train name1 name2` upgrades named skills.
+- Patterns are accepted (`gym train "auth-*"`).
 - If run inside a project with installed project skills:
   - project skills are upgraded
   - matching global installs are also upgraded by default
-  - use `--no-global` to disable global mirror
+  - use `gym train --no-global` to disable global mirror
 - If run outside a project with skills:
   - global skills only
+
+### CLI parsing/config
+
+- Command tree and aliases are implemented with Cobra.
+- Runtime CLI overrides are loaded with Viper from:
+  - `--config <file>` (if provided)
+  - `.gym/cli.yaml` in current working directory
+  - `$XDG_CONFIG_HOME/gym/cli.yaml`
+- Env overrides are supported via `GYM_*` keys (for example `GYM_LEARN_GLOBAL=true`).
 
 ### IDE/TDE path awareness
 

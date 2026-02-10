@@ -1,6 +1,6 @@
 # gym: User Guide
 
-`gym` installs and upgrades skills that follow the [agentskills.io](https://agentskills.io) spec.
+`gym` learns and trains skills that follow the [agentskills.io](https://agentskills.io) spec.
 
 ## Install
 
@@ -78,17 +78,17 @@ gym coach hire --global owner/repo
 gym update
 ```
 
-3. Install a skill by name:
+3. Learn a skill by name:
 
 ```bash
-gym install acme-auth
+gym learn acme-auth
 ```
 
-Or install directly from a URL / local dir:
+Or learn directly from a URL / local dir:
 
 ```bash
-gym install https://github.com/acme/acme-auth-skill.git
-gym install /path/to/local/skill
+gym learn https://github.com/acme/acme-auth-skill.git
+gym learn /path/to/local/skill
 ```
 
 ## Common Commands
@@ -99,29 +99,59 @@ gym install /path/to/local/skill
 gym update
 ```
 
-### Install
+### Learn
 
 ```bash
-gym install <skill-name>
-gym install <git-url|file-url|dir>
+gym learn <skill-name>
+gym learn <git-url|file-url|dir>
 ```
 
 Scope selection:
-- default: installs to project when inside a project root; otherwise global
-- override: `gym install --project …` or `gym install --global …`
+- default: installs to project-local `CWD/.gym/skills`
+- override: `gym learn --global …` (or `gym learn -g …`)
+- compatibility aliases: `gym install ...`
 
-### Upgrade
+Target selection:
+- if multiple install paths match the chosen scope, `gym learn` installs into all of them
+- filter with `--agent` patterns (prefix with `!` to exclude)
+- override a single path with `--path NAME_OR_PATH`
+
+### Train
 
 ```bash
-gym upgrade              # all
-gym upgrade auth-*       # patterns ok
-gym upgrade skill1 skill2
+gym train              # all
+gym train auth-*       # patterns ok
+gym train skill1 skill2
 ```
 
-Upgrade mirror policy:
+Train mirror policy:
 - if run inside a project with project-installed skills: upgrade project skills
 - by default, also upgrades matching globally-installed skills
-- disable global mirror: `gym upgrade --no-global`
+- disable global mirror: `gym train --no-global`
+- compatibility aliases: `gym upgrade ...`
+
+### CLI config (Viper)
+
+You can provide CLI defaults via Viper:
+
+- `--config <file>`
+- `.gym/cli.yaml` in current working directory
+- `$XDG_CONFIG_HOME/gym/cli.yaml`
+
+Example:
+
+```yaml
+learn:
+  global: false
+  path: ""
+  agents: []
+train:
+  no_global: false
+```
+
+Environment overrides:
+- `GYM_LEARN_GLOBAL=true`
+- `GYM_TRAIN_NO_GLOBAL=true`
 
 ### Install paths
 
@@ -141,6 +171,39 @@ Add a project install path (writes to project config by default):
 
 ```bash
 gym paths add --scope project --path .claude/skills
+```
+
+### Warmup (Progressive Disclosure)
+
+Generate lightweight skill metadata for context-efficient agent startup:
+
+```bash
+gym warmup                          # XML to stdout (default)
+gym warmup --format json            # JSON array of metadata
+gym warmup --format agents-md       # AGENTS.md format
+gym warmup -o skills.xml            # Write to file
+gym warmup --scope global           # Only global skills
+gym warmup --scope project          # Only project skills
+```
+
+**What is progressive disclosure?**
+
+Following the [agentskills.io specification](https://agentskills.io/specification#progressive-disclosure), agents should:
+1. Load only skill **metadata** at startup (~100 tokens per 50 skills)
+2. Fetch **full content** on-demand when needed (~5000 tokens per skill)
+
+This keeps agent context clean and reduces startup latency.
+
+**Example workflow:**
+```bash
+# Generate XML manifest for Claude Code
+gym warmup --format xml -o ~/.claude/skills-manifest.xml
+
+# Generate AGENTS.md for multi-agent compatibility
+gym warmup --format agents-md -o .agents/AGENTS.md
+
+# Generate JSON for custom tooling
+gym warmup --format json > skills.json
 ```
 
 ### Serve a registry
