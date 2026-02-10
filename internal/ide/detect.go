@@ -26,6 +26,7 @@ var standardGlobalPaths = []knownPath{
 }
 
 var standardProjectPaths = []knownPath{
+	{name: "gym-project", rel: ".gym/skills"},
 	{name: "claude-project", rel: ".claude/skills"},
 	{name: "cursor-project", rel: ".cursor/skills"},
 	{name: "gemini-project", rel: ".gemini/skills"},
