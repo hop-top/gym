@@ -12,11 +12,11 @@ import (
 
 func TestExtractMetadata(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantName    string
-		wantDesc    string
-		wantErr     bool
+		name     string
+		content  string
+		wantName string
+		wantDesc string
+		wantErr  bool
 	}{
 		{
 			name: "valid frontmatter",
