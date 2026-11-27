@@ -39,7 +39,9 @@ func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 	}
 
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
+	// Pin XDG_CONFIG_HOME so kit/xdg uses Linux-style paths on every OS;
+	// test relies on the user config landing under <home>/.config/gym/.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	cfg, src, err := config.LoadMergedConfig(projectRoot)
 	if err != nil {
