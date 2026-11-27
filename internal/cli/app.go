@@ -71,6 +71,8 @@ type App struct {
 	// guardSub is the CEL policy guard subscriber. Lazy: started
 	// once per process inside PersistentPreRunE.
 	guardSub *guard.Guard
+	// guardErr is why guardSub could not start (nil when it did).
+	guardErr error
 
 	// maxDataClass is the --max-data-class override.
 	maxDataClass string

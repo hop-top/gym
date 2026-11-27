@@ -12,8 +12,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"hop.top/gym/internal/config"
+	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
@@ -37,6 +39,17 @@ func newGuardForApp(a *App) (*guard.Guard, error) {
 	return guard.New(a.Bus(), guard.WithEngine(eng), guard.WithLogger(a.Logger()))
 }
 
+// gateUnavailable reports, under --strict, that the guard subscriber
+// failed to start so no verdict can ever arrive. Fail-closed with the
+// cause instead of waiting out the gate timeout. Without --strict it
+// returns nil: the gate fails open as before (startup already warned).
+func (a *App) gateUnavailable() error {
+	if a == nil || a.guardErr == nil || !eventbus.IsStrict(viper.GetViper()) {
+		return nil
+	}
+	return fmt.Errorf("%w: guard unavailable: %v", guard.ErrPolicyDeny, a.guardErr)
+}
+
 // installGate returns an install.GateFunc that publishes
 // gym.skill.install.requested on the bus and blocks on the guard's
 // reply. Returns nil when no bus is wired (tests, --help calls).
@@ -53,6 +66,9 @@ func (a *App) installGate(requestID string) install.GateFunc {
 		return nil
 	}
 	return func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan install.ScanResult, adm install.AdmissionResult) error {
+		if err := a.gateUnavailable(); err != nil {
+			return err
+		}
 		payload := withAdmission(events.SkillInstallRequestedPayload{
 			RequestID:          requestID,
 			Skill:              entry.Name,
@@ -76,6 +92,9 @@ func (a *App) installGate(requestID string) install.GateFunc {
 func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) error {
 	if a == nil || a.Bus() == nil {
 		return nil
+	}
+	if err := a.gateUnavailable(); err != nil {
+		return err
 	}
 	items := make([]events.UpgradePlanItem, 0, len(plan))
 	for _, p := range plan {
