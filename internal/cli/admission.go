@@ -73,19 +73,27 @@ func ruleReason(rule string) (string, bool) {
 	return "", false
 }
 
-// rejectionReason derives the admission rejection reason from an
-// install error: a hard AdmissionError, or the first admission-* finding
-// of a policy deny (deny-severity findings first). Empty when the error is not an admission failure.
+// rejectionReason derives the stable rejection reason from an install
+// error, or "" when the error is not a rejection:
+//   - hard AdmissionError: its reason
+//   - validator failure: validator-failed
+//   - policy deny: deny-severity findings decide (warn findings only
+//     when no deny finding exists, i.e. --strict); within that set an
+//     admission-* rule maps to its admission reason, otherwise the first
+//     finding's rule name is the reason.
 func rejectionReason(err error) string {
 	var ae *install.AdmissionError
 	if errors.As(err, &ae) {
 		return ae.Reason
 	}
+	var ve *install.ValidatorError
+	if errors.As(err, &ve) {
+		return install.ReasonValidatorFailed
+	}
 	var pd *guard.PolicyDenyError
 	if errors.As(err, &pd) {
-		// Deny-severity findings decide the verdict; warn findings only
-		// do under --strict (no deny finding exists then).
 		for _, sev := range []string{"deny", ""} {
+			first := ""
 			for _, f := range pd.Findings {
 				if sev != "" && f.Severity != sev {
 					continue
@@ -93,6 +101,12 @@ func rejectionReason(err error) string {
 				if r, ok := ruleReason(f.Rule); ok {
 					return r
 				}
+				if first == "" {
+					first = f.Rule
+				}
+			}
+			if first != "" {
+				return first
 			}
 		}
 	}
@@ -100,7 +114,8 @@ func rejectionReason(err error) string {
 }
 
 // publishInstallRejected publishes gym.skill.install.rejected once for
-// an admission failure. Non-admission errors publish nothing.
+// a rejected install or upgrade attempt (admission failure, validator
+// failure, or policy deny). Other errors (fetch, I/O) publish nothing.
 func (a *App) publishInstallRejected(ctx context.Context, skill, scope, requestID string, err error) {
 	if a == nil || a.Bus() == nil || err == nil {
 		return

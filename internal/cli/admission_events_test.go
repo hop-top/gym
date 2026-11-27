@@ -215,21 +215,23 @@ func TestLearn_RejectedPublishedOnceForHardFailures(t *testing.T) {
 	}
 }
 
-// Non-admission rejections (validator failure) publish nothing: that is
-// a separate event contract.
-func TestLearn_ValidatorFailureDoesNotPublishAdmissionRejection(t *testing.T) {
+// A validator failure is a rejection: it publishes exactly one rejected
+// event with reason validator-failed. No requested event precedes it,
+// so the id is the attempt's own.
+func TestLearn_ValidatorFailurePublishesRejected(t *testing.T) {
 	home := isolateInternal(t)
-	cfgPath := filepath.Join(home, ".config", "gym", "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("validator:\n  command: [sh, -c, \"exit 1\"]\n  timeout_seconds: 5\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	setValidator(t, home, "exit 1")
 	ba := newBusApp(t, home, true)
 	src := skillTree(t, "lint", "")
 	if err := ba.learn(t, src, scratch(t)); err == nil {
 		t.Fatal("expected validator failure")
 	}
-	if rej, _ := ba.snapshot(); len(rej) != 0 {
+	rej, req := ba.snapshot()
+	if len(rej) != 1 || rej[0].Reason != install.ReasonValidatorFailed || rej[0].Skill != "lint" || rej[0].Scope != "global" || rej[0].RequestID == "" {
 		t.Fatalf("rejected = %+v", rej)
+	}
+	if len(req) != 0 {
+		t.Errorf("gate ran after validator failure: %+v", req)
 	}
 }
 
