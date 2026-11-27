@@ -62,11 +62,13 @@ type SkillInstallCompletedPayload struct {
 	RequestID   string `json:"request_id,omitempty"`
 }
 
-// SkillInstallRejectedPayload is published once per install rejected by
-// admission: a hard integrity failure (manifest-invalid, digest-mismatch,
-// digest-unsupported-entry, approval-revoked) or an admission-* policy
-// deny. Reason is the stable rejection reason; RequestID matches the
-// gym.skill.install.requested event of the same attempt.
+// SkillInstallRejectedPayload is published once per install or upgrade
+// attempt that ends rejected: a hard admission failure
+// (manifest-invalid, digest-mismatch, digest-unsupported-entry,
+// approval-revoked), a validator failure (validator-failed), or a
+// policy deny (admission-* reasons, else the denying rule name).
+// Reason is the stable rejection reason; RequestID is the id the
+// attempt used for its gym.skill.install.requested event.
 type SkillInstallRejectedPayload struct {
 	Skill     string `json:"skill"`
 	Scope     string `json:"scope"`
