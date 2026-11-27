@@ -126,6 +126,14 @@ func TestPayloadsRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "SkillInstallRequestedFolder",
+			payload: events.SkillInstallRequestedPayload{
+				Skill: "lint", Version: "1.2.3", SourceURL: "https://x.test/lint",
+				Scope: "project", Folder: "/work/org/unit",
+				RequestID: "01HZ-req-3a",
+			},
+		},
+		{
 			name: "SkillInstallRequestedAdmission",
 			payload: events.SkillInstallRequestedPayload{
 				Skill: "lint", Version: "1.2.3", SourceURL: "https://x.test/lint", Scope: "project",
@@ -136,6 +144,14 @@ func TestPayloadsRoundTrip(t *testing.T) {
 				DataClass: "personal", MaxDataClass: "internal",
 				DataClassOver: true, DataClassEscalated: true,
 				ApprovalState: "unreviewed", RequestID: "01HZ-req-3b",
+			},
+		},
+		{
+			name: "SkillUpgradePlannedFolder",
+			payload: events.SkillUpgradePlannedPayload{
+				Items:     []events.UpgradePlanItem{{Skill: "lint", Scope: "project", From: "1.0.0"}},
+				Folder:    "/work/org/unit",
+				RequestID: "01HZ-req-5a",
 			},
 		},
 		{
@@ -153,6 +169,7 @@ func TestPayloadsRoundTrip(t *testing.T) {
 			name: "SkillInstallCompleted",
 			payload: events.SkillInstallCompletedPayload{
 				Skill: "lint", Version: "1.2.3", Scope: "project",
+				Folder:      "/work/org/unit",
 				InstallPath: "/tmp/lint", RequestID: "01HZ-req-3",
 			},
 		},
