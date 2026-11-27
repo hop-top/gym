@@ -217,10 +217,10 @@ func (a *App) updateCobra() *cobra.Command {
 
 func (a *App) learnCobra(vp *viper.Viper) *cobra.Command {
 	c := &cobra.Command{
-		Use:     "learn <skill-or-url> [skill-or-url...]",
+		Use:     "learn [skill-or-url...]",
 		Aliases: []string{"install"},
-		Short:   "Install skills by name, URL, or local path",
-		Args:    cobra.MinimumNArgs(1),
+		Short:   "Install skills by name, URL, or local path; with no arguments, restore from the lock",
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			toGlobal, _ := cmd.Flags().GetBool("global")
 			if !cmd.Flags().Changed("global") {
@@ -234,15 +234,14 @@ func (a *App) learnCobra(vp *viper.Viper) *cobra.Command {
 			if !cmd.Flags().Changed("agent") {
 				agents = vp.GetStringSlice("learn.agents")
 			}
-			noLock, _ := cmd.Flags().GetBool("no-lock")
-			return a.runLearnOpts(cmd.Context(), learnOpts{Global: toGlobal, PathHint: pathHint, Agents: agents, Tokens: args, NoLock: noLock})
+			return a.runLearnOpts(cmd.Context(), learnFlags(cmd, toGlobal, pathHint, agents, args))
 		},
 	}
 	addDirFlag(c)
 	c.Flags().BoolP("global", "g", false, "install globally (default: install into CWD/.gym)")
 	c.Flags().String("path", "", "install path name/path override")
 	c.Flags().StringArray("agent", nil, "limit install paths by name/path pattern (prefix with ! to exclude)")
-	c.Flags().Bool("no-lock", false, "install without reading or writing the lock")
+	addLearnLockFlags(c)
 	_ = vp.BindPFlag("learn.global", c.Flags().Lookup("global"))
 	_ = vp.BindPFlag("learn.path", c.Flags().Lookup("path"))
 	_ = vp.BindPFlag("learn.agents", c.Flags().Lookup("agent"))
@@ -262,12 +261,14 @@ func (a *App) trainCobra(vp *viper.Viper) *cobra.Command {
 			}
 			recursive, _ := cmd.Flags().GetBool("recursive")
 			depth, _ := cmd.Flags().GetInt("depth")
-			return a.runTrainOpts(cmd.Context(), trainOpts{NoGlobal: noGlobal, Patterns: args, Recursive: recursive, Depth: depth})
+			frozen, _ := cmd.Flags().GetBool("frozen")
+			return a.runTrainOpts(cmd.Context(), trainOpts{NoGlobal: noGlobal, Patterns: args, Recursive: recursive, Depth: depth, Frozen: frozen})
 		},
 	}
 	addDirFlag(c)
 	c.Flags().BoolP("recursive", "r", false, "also train every folder scope below the scope root")
 	c.Flags().Int("depth", defaultTrainDepth, "with -r: folder levels below the scope root to search")
+	c.Flags().Bool("frozen", false, "fail with lock-frozen if any upgrade is available; change nothing")
 	c.Flags().Bool("no-global", false, "do not mirror global upgrades from project upgrades")
 	_ = vp.BindPFlag("train.no_global", c.Flags().Lookup("no-global"))
 	return c

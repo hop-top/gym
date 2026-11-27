@@ -69,3 +69,13 @@ func resolveLearnToken(tok string, idx registry.Index) (learnTarget, error) {
 	}
 	return learnTarget{Entry: e, Requested: version, Kind: lock.KindRegistry}, nil
 }
+
+// isBareName reports whether tok is a plain registry name: not a URL, a
+// directory, a ref'd source or a name@version pin.
+func isBareName(tok string) bool {
+	if isURLLike(tok) || isExistingDir(tok) || strings.Contains(tok, "#") {
+		return false
+	}
+	_, _, pinned := splitNamePin(tok)
+	return !pinned
+}

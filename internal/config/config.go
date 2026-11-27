@@ -63,6 +63,7 @@ type Config struct {
 	Validator    ValidatorConfig    `json:"validator" yaml:"validator"`
 	Upgrade      UpgradeConfig      `json:"upgrade" yaml:"upgrade"`
 	Admission    AdmissionConfig    `json:"admission" yaml:"admission"`
+	Lock         LockConfig         `json:"lock" yaml:"lock"`
 }
 
 func defaultConfig() Config {

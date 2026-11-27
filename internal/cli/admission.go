@@ -12,6 +12,7 @@ import (
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/lock"
 )
 
 // registerAdmissionFlags adds the persistent --max-data-class flag
@@ -94,6 +95,10 @@ func rejectionReason(err error) string {
 	var re *install.RefusedError
 	if errors.As(err, &re) {
 		return re.Reason
+	}
+	var le *lock.Error
+	if errors.As(err, &le) && le.Reason == lock.ReasonSourceEscapes {
+		return le.Reason
 	}
 	var ve *install.ValidatorError
 	if errors.As(err, &ve) {

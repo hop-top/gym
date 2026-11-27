@@ -16,6 +16,7 @@ import (
 //   - admission.max_data_class, require_manifest, require_approval,
 //     require_pin: the Clamp* functions; an inner folder can tighten, never
 //     loosen.
+//   - lock.frozen: or; a folder can turn it on, never off.
 //   - install_paths: the innermost layer that sets it replaces the list;
 //     each entry must stay inside the folder that wrote it.
 //   - repositories, curation, upgrade: innermost wins.

@@ -24,6 +24,7 @@ var projectKeys = map[string]bool{
 	"repositories":  true,
 	"curation":      true,
 	"upgrade":       true,
+	"lock":          true, // frozen may only be turned on (see applyProjectLayer)
 }
 
 const projectAdmissionKey = "admission"
@@ -115,6 +116,11 @@ func applyProjectLayer(cfg *Config, path, anchor string) ([]string, error) {
 			derr = decodeKey(keys[k], &cfg.Curation)
 		case "upgrade":
 			derr = decodeKey(keys[k], &cfg.Upgrade)
+		case "lock":
+			var l LockConfig
+			if derr = decodeKey(keys[k], &l); derr == nil {
+				cfg.Lock.Frozen = cfg.Lock.Frozen || l.Frozen
+			}
 		}
 		if derr != nil {
 			return nil, fmt.Errorf("load config %s: %s: %w", path, k, derr)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -113,12 +114,19 @@ func (a *App) listCobra() *cobra.Command {
 			global, _ := cmd.Flags().GetBool("global")
 			effective, _ := cmd.Flags().GetBool("effective")
 			format, _ := cmd.Flags().GetString("format")
+			if check, _ := cmd.Flags().GetBool("check"); check {
+				if effective {
+					return errors.New("--check and --effective are mutually exclusive")
+				}
+				return a.runListCheck(global, format)
+			}
 			return a.runList(global, effective, format)
 		},
 	}
 	addDirFlag(c)
 	c.Flags().BoolP("global", "g", false, "list the global scope")
 	c.Flags().Bool("effective", false, "include ancestor folder scopes and the global scope; nearest wins")
+	c.Flags().Bool("check", false, "compare the scope with its lock; exit 1 on missing, digest-drift or modified")
 	return c
 }
 
