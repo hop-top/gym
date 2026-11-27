@@ -72,14 +72,14 @@ A scope is `(kind, root)`: `global` has no root; `project` has a root folder hol
 
 ### 1.2 Inheritance and who resolves it
 
-`scope.Chain(dir)` (new `internal/scope`): roots from `dir` up, innermost first, then global. Stops at `$HOME` (inclusive) or the filesystem root. A candidate ancestor is read only if owned by the current user and not group/world-writable (git `safe.directory` analogue); else skipped with warning `scope: ignoring <dir>/.gym (not owned by you or writable by others)`.
+`scope.Chain(dir)` (new `internal/scope`): roots from `dir` up, innermost first, then global. Stops at `$HOME` (inclusive) or the filesystem root. An ancestor root is read only if its `.gym` directory is owned by the current user and not group/world-writable (git `safe.directory` analogue); else skipped with warning `scope: ignoring <dir>/.gym (not owned by you or writable by others)`. The starting folder (`--dir`, or the current directory) is the operator's own choice and is not tested. On platforms without POSIX owner and mode bits the test passes every folder.
 
 Resolution points:
 
 | Where | Behaviour |
 |-------|-----------|
-| `gym list [--dir d] [--effective]` | Without `--effective`: this scope only. With: whole chain, nearest wins; shadowed entries marked `shadowed_by` |
-| `gym warmup` | Default effective (global + chain). `--no-inherit` restores nearest-only. JSON adds `folder` (root path) and `depth` (0 = innermost). Scope string stays `project`/`global` |
+| `gym list [--dir d] [--effective]` | Without `--effective`: this scope only. With: whole chain, nearest wins; shadowed entries marked `shadowed_by` (the winner's root, or `global`). Output is a table, or JSON with `--format json` |
+| `gym warmup` | Default effective (global + chain), nearest wins on a name clash. `--no-inherit` restores nearest-only. JSON adds `folder` (root path, project skills) and `depth` (0 = innermost folder; the global scope follows the last folder). Scope string stays `project`/`global` |
 | `gym learn`, `unlearn`, `train` | One scope at a time, never inherited |
 | Agent host | Loads whatever its own skill dirs give. gym does not copy ancestor skills into descendants |
 
@@ -103,7 +103,7 @@ Chain-merge replaces nearest-file-only: load each ancestor `.gym/config.yaml|jso
 | `repositories`, `curation`, `upgrade` | innermost wins | existing |
 | anything else | ignored (section 0.1) | |
 
-Containment: a folder-layer `install_paths` path must be relative, contain no `..` escaping, and resolve inside that folder's root; else `config: install path <p> escapes folder <root>` and the entry is ignored. `~` and absolute paths remain legal in user/system/`-c` layers. Alternative: allow absolute project paths guarded only by `path-allowlist`: rejected, that policy lists sensitive system dirs, not "inside the repo".
+Containment: a folder-layer `install_paths` path must be relative, contain no `..` escaping, and resolve inside that folder's root; else `config: install path <p> escapes project <root>` and the entry is ignored. A kept path resolves against the scope root being operated on, and must stay inside it too, so an inherited `.claude/skills` installs into each folder's own tree. `~` and absolute paths remain legal in user/system/`-c` layers. Alternative: allow absolute project paths guarded only by `path-allowlist`: rejected, that policy lists sensitive system dirs, not "inside the repo".
 
 Policies: `<folder>/.gym/policies` add-only (existing loader rule) across the chain; a name defined by several folders keeps the outermost, inner ones ignored with the existing warning. A folder inside a cloned repository is repository content: it may tighten, never relax, never run code.
 
@@ -111,7 +111,7 @@ Implementation: `internal/config/chain.go` generalises `loadAdmission` (base wit
 
 ### 1.4 State and train
 
-State: `<root>/.gym/installed.json`, same schema (no new fields). `train --dir <d>` plans for that scope plus the existing global mirror. `train --recursive` (`-r`) additionally walks below the root for `.gym/installed.json` (skips `.git`, `node_modules`; depth limit 8, `--depth n`), plans each scope separately, runs them in path order; one scope failing does not stop the rest, exit 1 at the end. `upgrade.Plan` unchanged per scope; `Plan` gets a `Root` on `PlanItem`.
+State: `<root>/.gym/installed.json`, same schema (no new fields). `train --dir <d>` plans for that scope plus the existing global mirror. `train --recursive` (`-r`) additionally walks below the root for `.gym/installed.json` (skips `.git`, `node_modules` and `.gym`, does not follow symlinks; depth limit 8, `--depth n`), plans each scope separately, runs them in path order; one scope failing does not stop the rest, exit 1 at the end. `upgrade.Plan` unchanged per scope; `Plan` gets a `Root` on `PlanItem`.
 
 ### 1.5 Tests (A)
 
@@ -124,7 +124,7 @@ State: `<root>/.gym/installed.json`, same schema (no new fields). `train --dir <
 | A5 | Ancestor group-writable or foreign-owned | unit | skipped, warning |
 | A6 | Chain stops at `$HOME` | unit | root above HOME ignored |
 | A7 | Org ceiling `public`, inner folder config silent | integration | `public` still applies (probe regression) |
-| A8 | Inner folder raises ceiling / lowers `require_manifest` / sets `network.mode: open` | unit | clamped, outer value kept |
+| A8 | Inner folder raises ceiling / lowers `require_manifest` / switches `require_approval` off (`network.mode` is covered by D9) | unit | clamped, outer value kept |
 | A9 | Folder `install_paths` `../x`, absolute | unit | ignored with warning |
 | A10 | Inner folder redefines outer policy name | unit | ignored, warning |
 | A11 | `warmup` effective vs `--no-inherit` | integration | union vs nearest |
@@ -446,7 +446,7 @@ A and C touch disjoint files (one `AddCommand` line in `cobra.go`, docs) and can
 
 | | F0 | A | B | C | D |
 |--|----|---|---|---|---|
-| New files | `internal/install/redact.go`, `internal/fsutil/atomic.go` | `internal/scope/scope.go`, `internal/config/chain.go`, `internal/cli/list.go` | `internal/lock/lock.go`, `internal/install/source.go`, `internal/cli/learn_lock.go` | `internal/cli/unlearn.go`, `internal/install/remove.go` | `internal/netpolicy/netpolicy.go`, `internal/install/archive.go`, `internal/registry/auth_fetch.go`, `internal/config/network.go` |
+| New files | `internal/install/redact.go`, `internal/fsutil/atomic.go` | `internal/scope/scope.go`, `internal/config/chain.go`, `internal/cli/list.go`, `internal/cli/scope_flags.go`, `internal/cli/train.go` | `internal/lock/lock.go`, `internal/install/source.go`, `internal/cli/learn_lock.go` | `internal/cli/unlearn.go`, `internal/install/remove.go` | `internal/netpolicy/netpolicy.go`, `internal/install/archive.go`, `internal/registry/auth_fetch.go`, `internal/config/network.go` |
 | Touched | `config/config.go`, `install/install.go`, `fsutil/copy.go`, `cli/app.go` (train path only) | `project/project.go`, `config/config.go` (loader call), `cli/app.go` (3 root calls), `cli/warmup.go`, `upgrade/planner.go` | `install/admission.go`, `install/install.go` (stage call), `registry/registry.go`, `serve/serve.go`, `cli/app.go` (learn/train lock hooks), `events/skill.go`, guard activation | `cli/cobra.go` (1 line), `events/skill.go` | `install/install.go` (git args), `registry/registry.go` (`RepositorySource.Auth`), `cli/coach.go`, `cli/cobra.go` (`--offline`), `config/config.go` |
 | Config keys | none new | none (chain semantics) | `lock.frozen`, `admission.require_pin` | none | `network.mode`, `network.allow_hosts`, `repositories[].auth` |
 | Schema | none | none | `lock.json` `gym.lock/v1` | none | none |
