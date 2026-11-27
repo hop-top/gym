@@ -188,8 +188,14 @@ func loadAdmission(opts kitconfig.Options, paths []string, overrides map[string]
 
 	var proj Config
 	if opts.ProjectConfigPath != "" {
-		if err := kitconfig.Load(&proj, kitconfig.Options{ProjectConfigPath: opts.ProjectConfigPath}); err != nil {
+		keys, err := readProjectLayer(opts.ProjectConfigPath)
+		if err != nil {
 			return AdmissionConfig{}, err
+		}
+		if v, ok := keys[projectAdmissionKey]; ok {
+			if err := decodeKey(v, &proj.Admission); err != nil {
+				return AdmissionConfig{}, fmt.Errorf("load config %s: %w", opts.ProjectConfigPath, err)
+			}
 		}
 		if err := proj.Admission.validate(true); err != nil {
 			return AdmissionConfig{}, fmt.Errorf("%s: %w", opts.ProjectConfigPath, err)

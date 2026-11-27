@@ -82,7 +82,11 @@ func defaultConfig() Config {
 	}
 }
 
-func normalizePaths(cfg *Config, cwd string) {
+// normalizePaths expands "~/" and anchors relative project-scope paths.
+// Project-layer paths arrive already absolute (see sanitizeProjectPaths);
+// a relative project-scope path from an operator layer resolves against the
+// project root, not the current directory.
+func normalizePaths(cfg *Config, root string) {
 	home := os.Getenv("HOME")
 	for i := range cfg.InstallPaths {
 		p := cfg.InstallPaths[i].Path
@@ -91,7 +95,7 @@ func normalizePaths(cfg *Config, cwd string) {
 			continue
 		}
 		if cfg.InstallPaths[i].Scope == "project" && !filepath.IsAbs(p) {
-			cfg.InstallPaths[i].Path = filepath.Join(cwd, p)
+			cfg.InstallPaths[i].Path = filepath.Join(root, p)
 		}
 	}
 }
@@ -151,30 +155,65 @@ func layerOptions(cwd string) kitconfig.Options {
 	return opts
 }
 
-// loadConfig layers defaults < opts' system/user/project files < extra
-// config files < key=value overrides, via kit.
+// loadConfig layers defaults < opts' system/user files < the allowed keys
+// of the project file < extra config files < key=value overrides, via kit.
 func loadConfig(cwd string, opts kitconfig.Options, paths []string, overrides map[string]any) (Config, error) {
+	cfg, _, err := loadConfigWarn(cwd, opts, paths, overrides)
+	return cfg, err
+}
+
+// loadConfigWarn is loadConfig plus the warnings for ignored project keys.
+//
+// The project layer is repository content, so it is not given to kit with
+// the other layers: kit loads defaults + system + user, the project file is
+// read on its own and only its allowed keys are copied on (see
+// applyProjectLayer), then the operator's -c files and overrides apply on
+// top, unrestricted.
+func loadConfigWarn(cwd string, opts kitconfig.Options, paths []string, overrides map[string]any) (Config, []string, error) {
 	defaults := defaultConfig()
-	opts.Defaults = &defaults
-	opts.ExtraConfigPaths = paths
-	opts.Overrides = overrides
+	baseOpts := opts
+	baseOpts.Defaults = &defaults
+	baseOpts.ProjectConfigPath = ""
+	baseOpts.ExtraConfigPaths = nil
+	baseOpts.Overrides = nil
 
 	var cfg Config
-	if err := kitconfig.Load(&cfg, opts); err != nil {
-		return Config{}, err
+	if err := kitconfig.Load(&cfg, baseOpts); err != nil {
+		return Config{}, nil, err
 	}
-	var err error
+	warnings, err := applyProjectLayer(&cfg, opts.ProjectConfigPath)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	if len(paths) > 0 || len(overrides) > 0 {
+		var out Config
+		if err := kitconfig.Load(&out, kitconfig.Options{
+			Defaults:         &cfg,
+			ExtraConfigPaths: paths,
+			Overrides:        overrides,
+		}); err != nil {
+			return Config{}, nil, err
+		}
+		cfg = out
+	}
 	if cfg.Admission, err = loadAdmission(opts, paths, overrides); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
-	normalizePaths(&cfg, cwd)
-	return cfg, nil
+	normalizePaths(&cfg, adminRoot(opts.ProjectConfigPath, cwd))
+	return cfg, warnings, nil
+}
+
+// LoadMergedConfigWarn is LoadMergedConfig that also returns one warning
+// per project-config key that was ignored.
+func LoadMergedConfigWarn(cwd string, paths []string, overrides map[string]any) (Config, []string, error) {
+	return loadConfigWarn(cwd, layerOptions(cwd), paths, overrides)
 }
 
 // LoadMergedConfig loads the layered configuration. paths and overrides are
 // the extra config files and key=value overrides parsed from -c/--config.
 func LoadMergedConfig(cwd string, paths []string, overrides map[string]any) (Config, error) {
-	return loadConfig(cwd, layerOptions(cwd), paths, overrides)
+	cfg, _, err := LoadMergedConfigWarn(cwd, paths, overrides)
+	return cfg, err
 }
 
 // loadLayer reads a single config file (no defaults, no other layers).
