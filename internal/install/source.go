@@ -13,6 +13,7 @@ import (
 	"hop.top/kit/go/console/progress"
 
 	"hop.top/gym/internal/config"
+	"hop.top/gym/internal/netpolicy"
 	"hop.top/gym/internal/registry"
 )
 
@@ -89,6 +90,18 @@ type Staged struct {
 // takes the default branch, a branch or tag is cloned with --branch, and a
 // 40/64-hex commit is fetched with init + fetch + detached checkout.
 func StageSource(ctx context.Context, source, ref string) (Staged, error) {
+	return StageSourceAuth(ctx, source, ref, nil)
+}
+
+// StageSourceAuth is StageSource for a source that may be an archive URL
+// listed by a repository: au carries that repository's credential.
+func StageSourceAuth(ctx context.Context, source, ref string, au *ArchiveAuth) (Staged, error) {
+	if IsArchiveSource(source) {
+		if ref != "" {
+			return Staged{}, fmt.Errorf("archive sources take no #ref (pin the content with --digest)")
+		}
+		return StageArchive(ctx, source, au)
+	}
 	if ref == "" && IsDirSource(source) {
 		return Staged{Root: strings.TrimPrefix(source, "file://"), Cleanup: func() {}}, nil
 	}
@@ -103,6 +116,9 @@ func StageSource(ctx context.Context, source, ref string) (Staged, error) {
 	}
 	if strings.HasPrefix(source, "-") {
 		return Staged{}, fmt.Errorf("unsupported source %q", source)
+	}
+	if err := checkGitSource(ctx, source); err != nil {
+		return Staged{}, err
 	}
 	tmp, err := os.MkdirTemp("", "skills-install-*")
 	if err != nil {
@@ -174,17 +190,70 @@ func revParseHead(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// gitHardening is prepended to every git invocation. Only the transports
+// gym supports are allowed: https and ssh always, the file transport for a
+// location the operator typed (git sets GIT_PROTOCOL_FROM_USER=0 for
+// submodules and nested fetches, which therefore cannot use it), and never
+// ext. gym passes no --recurse-submodules.
+var gitHardening = []string{
+	"-c", "protocol.allow=user",
+	"-c", "protocol.https.allow=always",
+	"-c", "protocol.ssh.allow=always",
+	"-c", "protocol.file.allow=user",
+	"-c", "protocol.ext.allow=never",
+}
+
+// stdinIsTerminal reports whether git may prompt on the terminal; tests
+// replace it.
+var stdinIsTerminal = func() bool {
+	st, err := os.Stdin.Stat()
+	if err != nil || st.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(st, null) {
+		return false
+	}
+	return true
+}
+
+// gitCmd builds a git command with the hardened protocol set and, off a
+// terminal, prompts disabled so a missing credential fails instead of
+// hanging.
+func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", append(append([]string{}, gitHardening...), args...)...)
+	cmd.Dir = dir
+	if !stdinIsTerminal() {
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	}
+	return cmd
+}
+
 // git runs one git command (in dir when set) and returns its combined output.
 func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	return cmd.CombinedOutput()
+	return gitCmd(ctx, dir, args...).CombinedOutput()
+}
+
+// checkGitSource applies the network policy to the host git will contact.
+// Under a restrictive policy that is the effective URL, after the
+// operator's url.<base>.insteadOf rewrites (`git ls-remote --get-url`, a
+// local config lookup), not the URL as typed. It runs before any git
+// command that could touch the network.
+func checkGitSource(ctx context.Context, source string) error {
+	eff := source
+	if !netpolicy.Open() {
+		if out, err := git(ctx, "", "ls-remote", "--get-url", "--", source); err == nil {
+			if u := strings.TrimSpace(string(out)); u != "" {
+				eff = u
+			}
+		}
+	}
+	return netpolicy.Check(eff)
 }
 
 // stageEntry stages entry's source at ref and returns the skill directory
 // inside it (entry.Path below the staged root, which may not leave it).
-func stageEntry(ctx context.Context, entry registry.SkillEntry, ref string) (skillPath, commit string, cleanup func(), err error) {
-	st, err := StageSource(ctx, entry.SourceURL, ref)
+func stageEntry(ctx context.Context, entry registry.SkillEntry, ref string, cfg config.Config) (skillPath, commit string, cleanup func(), err error) {
+	st, err := StageSourceAuth(ctx, entry.SourceURL, ref, archiveAuthFor(cfg, entry))
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -197,4 +266,18 @@ func stageEntry(ctx context.Context, entry registry.SkillEntry, ref string) (ski
 		}
 	}
 	return skillPath, st.Commit, st.Cleanup, nil
+}
+
+// archiveAuthFor is the credential of the repository that listed entry:
+// only a user, system or -c repository carries one (see config).
+func archiveAuthFor(cfg config.Config, entry registry.SkillEntry) *ArchiveAuth {
+	if entry.OriginURL == "" {
+		return nil
+	}
+	for _, r := range cfg.Repositories {
+		if r.URL == entry.OriginURL && r.Auth != nil {
+			return &ArchiveAuth{Auth: r.Auth, RepoURL: r.URL}
+		}
+	}
+	return nil
 }
