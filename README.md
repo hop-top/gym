@@ -12,7 +12,7 @@
 Universal package manager for [agentskills.io](https://agentskills.io) skills.
 
 - Module/binary: `hop.top/gym` / `gym`
-- Validation gate: `skills-ref test`
+- Validation gate: `skills-ref validate`
 - Supports curated registries and direct URL installs
 - XDG-first paths with user + project hierarchical config
 - Scope-aware upgrades with project/global mirror policy
@@ -131,7 +131,7 @@ Implements the agentskills.io progressive disclosure pattern: agents load only n
 - if multiple install paths match the chosen scope, `gym learn` installs into all of them
 - use `--agent` patterns (or `--path`) to filter install targets
 
-Install gates on validator pass (`skills-ref test {path}` by default), admission checks, and policy verdicts.
+Install gates on validator pass (`skills-ref validate {path}` by default), admission checks, and policy verdicts.
 
 ### Train policy
 
@@ -244,7 +244,7 @@ install_paths:
 curation:
   min_stars: 100
 validator:
-  command: [skills-ref, test, "{path}"]
+  command: [skills-ref, validate, "{path}"]
   timeout_seconds: 20
 upgrade:
   mirror_global_from_project: true

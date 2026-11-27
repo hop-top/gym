@@ -82,7 +82,7 @@ Index storage:
 - resolve skill root:
   - if registry entry has `path`, use `<repo>/<path>`
   - else use repo root
-- validate using configured `validator.command` (default `skills-ref test {path}`)
+- validate using configured `validator.command` (default `skills-ref validate {path}`)
 - admission (`internal/install/admission.go`, `Admit`): digest, pin, `gym.json`, tool coverage, ceiling, approval
 - gate (policies) with the admission facts
 - copy validated directory into install path:

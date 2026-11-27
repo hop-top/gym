@@ -16,14 +16,14 @@ go build -o gym ./cmd/gym
 
 ## Prereq: `skills-ref`
 
-Installs are gated by validation (default: `skills-ref test {path}`).
+Installs are gated by validation (default: `skills-ref validate {path}`).
 
 If you use a different validator, set it in user/project config:
 
 ```json
 {
   "validator": {
-    "command": ["skills-ref", "test", "{path}"],
+    "command": ["skills-ref", "validate", "{path}"],
     "timeout_seconds": 20
   }
 }

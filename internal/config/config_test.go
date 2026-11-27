@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"hop.top/gym/internal/config"
@@ -22,7 +23,7 @@ repositories:
 install_paths:
   - {name: claude-global, path: "~/.claude/skills", scope: global}
 curation: {min_stars: 100}
-validator: {command: [skills-ref, test, "{path}"], timeout_seconds: 15}
+validator: {command: [skills-ref, validate, "{path}"], timeout_seconds: 15}
 `
 	if err := os.WriteFile(filepath.Join(userCfgDir, "config.yaml"), []byte(userConfig), 0o644); err != nil {
 		t.Fatal(err)
@@ -66,5 +67,23 @@ upgrade: {mirror_global_from_project: false}
 	}
 	if cfg.Curation.MinStars != 100 {
 		t.Fatalf("MinStars = %d, want 100", cfg.Curation.MinStars)
+	}
+}
+
+func TestLoadMergedConfig_DefaultValidatorMatchesDefaultCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	cfg, err := config.LoadMergedConfig(t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := config.DefaultValidatorCommand()
+	if !reflect.DeepEqual(cfg.Validator.Command, want) {
+		t.Fatalf("default Validator.Command = %v, want %v", cfg.Validator.Command, want)
 	}
 }
