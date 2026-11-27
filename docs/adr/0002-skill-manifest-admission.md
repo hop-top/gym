@@ -21,7 +21,7 @@ Gaps found while reading the code:
 5. `gym.skill.install.rejected` has a topic, payload, and a contract doc, but no production publisher. Only the e2e test publishes it.
 6. `App.Run` returns 1 for every error. No exit-code taxonomy.
 7. `gym guard test <target>` parses a JSON manifest file and evaluates it raw as the payload. It runs neither staging scan nor validator, and a skill directory without a `gym.json`-style file errors out.
-8. Project-level policy overrides (`<root>/.gym/policies`) can disable or relax built-in policies (package doc, `internal/guard/doc.go`). A cloned repository can weaken its own admission.
+8. Project-level policy overrides (`<root>/.gym/policies`) can disable or relax built-in policies (package doc, `internal/guard/doc.go`). A cloned repository can weaken its own admission. Since closed: project policies are add-only.
 
 Requirement: skill validation verifies a declarative manifest schema, a SHA-256 content digest, declared `allowed_tools` with no undeclared tools, a `data_class` not above the operator's ceiling, and `approval_state`.
 
