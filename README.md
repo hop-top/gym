@@ -35,11 +35,12 @@ go build -o gym ./cmd/gym
 ```bash
 gym version
 gym update
-gym learn [--global|-g] [--path NAME_OR_PATH] [--agent PATTERN ...] <skill-or-url> [...]
-gym train [--no-global] [pattern ...]
+gym learn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] <skill-or-url> [...]
+gym train [--dir FOLDER] [--recursive|-r [--depth N]] [--no-global] [pattern ...]
+gym list [--global|-g | --dir FOLDER] [--effective] [--format json]
 gym install ...  # alias of learn
 gym upgrade ...  # alias of train
-gym warmup [--format xml|json|agents-md] [--scope all|global|project] [-o FILE]
+gym warmup [--format xml|json|agents-md] [--scope all|global|project] [--dir FOLDER] [--no-inherit] [-o FILE]
 gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
 gym coach list
 gym coach dismiss [--global|-g] [--no-update] <name|url>
@@ -111,9 +112,20 @@ Details: [docs/user.md](docs/user.md), [ADR-0002](docs/adr/0002-skill-manifest-a
 - `--format json` → JSON array of skill metadata
 - `--format agents-md` → AGENTS.md format for multi-agent compatibility
 - `--scope all|global|project` → filter by install scope
+- effective by default: global plus every folder scope on the chain, nearest wins; `--no-inherit` keeps the nearest scope only; `--dir FOLDER` reads as seen from that folder
 - `-o FILE` → write to file (default: stdout)
 
 Implements the agentskills.io progressive disclosure pattern: agents load only name+description at startup (~100 tokens), then fetch full skill content on-demand.
+
+### Folder scopes
+
+A folder scope is a project scope rooted at a folder you choose, for work organised as a tree of folders (company, unit, project):
+- `gym learn --dir FOLDER …` installs into `FOLDER/.gym`; `gym train --dir FOLDER [-r]` upgrades it (and the scopes below it); `gym list [--dir FOLDER] [--effective]` shows one scope or the whole chain
+- inheritance is resolved when gym reads (`warmup`, `list --effective`), never by copying skills into descendants
+- config of every ancestor folder is merged, outermost to innermost; an inner folder can tighten admission settings, never loosen them
+- the chain stops at `$HOME` and skips ancestor `.gym` directories you do not own or that others can write
+
+Details: [docs/user.md](docs/user.md), [ADR-0003](docs/adr/0003-folder-scopes-lockfile-uninstall-sources.md).
 
 ### Cheat sheets (toolspec + tip)
 
@@ -127,7 +139,7 @@ Implements the agentskills.io progressive disclosure pattern: agents load only n
 `gym learn` supports:
 - skill names from local merged registry index
 - direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories
-- default target is project-local install in `CWD/.gym/skills`
+- default target is project-local install in `CWD/.gym/skills`; `--dir FOLDER` installs into another folder scope
 - use `--global` (or `-g`) for global install scope
 - if multiple install paths match the chosen scope, `gym learn` installs into all of them
 - use `--agent` patterns (or `--path`) to filter install targets
@@ -145,6 +157,7 @@ Install gates on validator pass (`skills-ref validate {path}` by default), admis
   - use `gym train --no-global` to disable global mirror
 - If run outside a project with skills:
   - global skills only
+- `--dir FOLDER` trains that folder scope; `--recursive` also trains the scopes below it, each on its own (a failing scope does not stop the rest; exit 1 at the end)
 
 ### Global flags (kit/console/cli)
 

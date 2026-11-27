@@ -18,6 +18,7 @@ Learn:
 - by name: `gym learn <skill>`
 - by URL/dir: `gym learn <git-url|file-url|dir>`
 - default scope: project install at `CWD/.gym/skills`
+- folder scope elsewhere: `gym learn --dir <folder> …` (not with `-g`)
 - force global: `gym learn --global …` or `gym learn -g …`
 - if multiple install paths match scope, installs into all of them
 - filter targets: `gym learn --agent claude --agent "!codex" …`
@@ -30,7 +31,12 @@ Train:
 - select: `gym train a b`
 - patterns: `gym train "auth-*"`
 - in project with project skills: upgrades project; mirrors global by default; disable: `gym train --no-global`
+- folder scope: `gym train --dir <folder>`; with its nested scopes: `-r [--depth N]`
 - compatibility alias: `gym upgrade ...`
+
+List:
+- one scope: `gym list [--dir <folder> | -g] [--format json]`
+- what an agent in a folder sees: `gym list --effective` (nearest wins, shadowed entries marked)
 
 Paths:
 - list: `gym paths`
@@ -41,6 +47,7 @@ Warmup (Progressive Disclosure):
 - metadata: `gym warmup --format xml|json|agents-md`
 - scoped: `gym warmup --scope global|project|all`
 - to file: `gym warmup -o FILE`
+- effective by default (global + folder chain); nearest folder only: `--no-inherit`; from another folder: `--dir <folder>`
 - implements agentskills.io progressive disclosure: load metadata (~100 tokens) at startup, fetch full content on-demand
 
 Coach judging (rsx-backed):

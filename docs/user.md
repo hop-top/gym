@@ -58,9 +58,9 @@ Two scopes exist for *config*:
 
 A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highest: defaults, system, user, project, `-c <file>`, `-c key=value`. Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
 
-Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`.
+Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`. A root's `.gym/config.yaml` applies to that folder and, merged as described under Folder scopes, to every folder below it.
 
-A project file arrives with a clone, so it is not trusted like your own config. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (which can only tighten). Every other key, including `validator`, is ignored with `config: ignoring project key "<key>" (user/system/-c only)`. Project `install_paths` must be relative and stay inside the project root: an absolute path, a `..` that leaves the tree, a `~` path, or a symlink out of the tree is ignored with `config: install path <p> escapes project <root>`. Relative project paths resolve against the project root, not the directory you run gym from. `.gym/skills` must not be a symlink out of the tree either. Absolute and `~` paths stay fine in user and system config and with `-c`.
+A project file arrives with a clone, so it is not trusted like your own config. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (which can only tighten). Every other key, including `validator`, is ignored with `config: ignoring project key "<key>" (user/system/-c only)`. Project `install_paths` must be relative and stay inside the project root: an absolute path, a `..` that leaves the tree, a `~` path, or a symlink out of the tree is ignored with `config: install path <p> escapes project <root>`. Relative project paths resolve against the scope root (the folder gym installs into, see Folder scopes), not the directory you run gym from. `.gym/skills` must not be a symlink out of the tree either. Absolute and `~` paths stay fine in user and system config and with `-c`.
 
 `.gym/installed.json` is trusted the same way: `gym train` writes or replaces a recorded skill only when its `install_path` is `<install path>/<skill name>`, a real directory (or absent, never a symlink), under the project root for project skills, or under a configured or standard global install path for global skills. Any other record fails with `install-path-untrusted: <path>`, its directory is not touched, and the remaining records still upgrade. `--insecure` does not relax this. `gym warmup` and `gym cheat` apply the same check and skip an untrusted record with a warning, never reading from its directory.
 
@@ -73,6 +73,36 @@ gym -c curation.min_stars=50 paths
 gym -c ./team.yaml paths
 gym -c 'install_paths=[{name: x, path: /opt/skills, scope: global}]' paths
 ```
+
+### Folder scopes
+
+A folder scope is a `project` scope whose root is a folder you choose: the scope value stays `project`. Use it when work is a tree of folders (company, unit, project) and each level carries its own skills. A folder holds its scope in `<folder>/.gym/` (`installed.json`, `skills/`, optional `config.yaml`, `policies/`).
+
+Choose the folder with `--dir <path>` on `learn`, `train`, `list` and `warmup`. It must be an existing directory and cannot be combined with `-g`/`--global`:
+
+| Command | Default folder (no `--dir`) |
+|---------|-----------------------------|
+| `learn` | the current directory |
+| `train`, `list`, `warmup` | nearest scope root at or above the current directory |
+
+`gym learn` run in a folder with no scope of its own, below a folder that has one, creates a new scope there and says so on stderr: `note: installing into new folder scope <cwd>; nearest existing scope is <root> (--dir <root> to use it)`.
+
+**Inheritance.** gym resolves it when it reads, never by copying skills. The chain of a folder is its own scope, then each ancestor's, innermost first, ending at `$HOME` (included; folders above it are never read) or at the filesystem root for a folder outside `$HOME`; the global scope follows. An ancestor's `.gym` is read only when it belongs to you and is not group- or world-writable; otherwise gym skips it with `scope: ignoring <dir>/.gym (not owned by you or writable by others)`. The folder you point at is not tested. Agent hosts load whatever skill directories they are configured to load; to give a host the effective set, write it out: `gym warmup --dir <folder> --format agents-md -o <folder>/AGENTS.md`.
+
+**Config across the chain.** Every `.gym/config.yaml` on the chain is read, outermost to innermost, on top of user and system config:
+
+| Key | Folded as |
+|-----|-----------|
+| `admission.max_data_class` | lowest ceiling wins |
+| `admission.require_manifest` | strictest wins |
+| `admission.require_approval` | on if any folder sets it |
+| `install_paths` (scope `project`) | innermost folder that sets it replaces the list |
+| `repositories`, `curation`, `upgrade` | innermost wins |
+| anything else | ignored |
+
+So an inner folder can tighten what an outer one set, never loosen it. A folder's `install_paths` must be relative and stay inside the folder that wrote it, else `config: install path <p> escapes project <root>` and the entry is ignored. A relative path resolves against the scope root being operated on: an org-level `.claude/skills` installs into `<scope>/.claude/skills` for each folder scope. `-c` files and `-c key=value` still apply last and are not restricted.
+
+`<folder>/.gym/policies` add policies across the chain. A policy name defined by several folders keeps the outermost definition; an inner one is ignored with a warning, as is a policy that would redefine a built-in or user policy.
 
 ## Quickstart
 
@@ -126,7 +156,8 @@ gym learn <git-url|file-url|dir>
 
 Scope selection:
 - default: installs to project-local `CWD/.gym/skills`
-- override: `gym learn --global …` (or `gym learn -g …`)
+- a folder scope elsewhere: `gym learn --dir <folder> …` installs into `<folder>/.gym/skills` and records state in `<folder>/.gym/installed.json`
+- override: `gym learn --global …` (or `gym learn -g …`); `--dir` and `-g` exclude each other
 - compatibility aliases: `gym install ...`
 
 Target selection:
@@ -140,7 +171,12 @@ Target selection:
 gym train              # all
 gym train auth-*       # patterns ok
 gym train skill1 skill2
+gym train --dir org/unit      # that folder scope
+gym train --dir org -r        # that folder scope and every scope below it
+gym train --dir org -r --depth 3
 ```
+
+`--recursive` (`-r`) walks below the scope root for folders holding `.gym/installed.json` (it skips `.git`, `node_modules` and `.gym`, and does not follow symlinks; `--depth` bounds the levels, default 8). Each scope is planned and upgraded on its own, in path order. A scope that fails is reported with its path and the others still run; the exit code is 1 if any failed.
 
 Train mirror policy:
 - if run inside a project with project-installed skills: upgrade project skills
@@ -191,6 +227,18 @@ Add a project install path (writes to project config by default):
 gym paths add --scope project --path .claude/skills
 ```
 
+### List
+
+```bash
+gym list                      # nearest folder scope
+gym list --dir org/unit       # that folder scope
+gym list -g                   # global scope
+gym list --effective          # what an agent in this folder sees
+gym list --format json
+```
+
+`gym list` shows one scope: the folder scope at `--dir`, else the nearest one at or above the current directory (`-g` for global). With `--effective` it shows the whole chain, the folder's own scope, its ancestors and the global scope; where several scopes hold the same name the nearest wins and the others are listed with `SHADOWED BY` (`shadowed_by` in JSON) naming the winner's folder or `global`. Columns: name, version, scope, folder, install path. JSON rows add `depth` (0 is the innermost folder; the global scope follows the last folder) and the source URL.
+
 ### Warmup (Progressive Disclosure)
 
 Generate lightweight skill metadata for context-efficient agent startup:
@@ -202,7 +250,11 @@ gym warmup --format agents-md       # AGENTS.md format
 gym warmup -o skills.xml            # Write to file
 gym warmup --scope global           # Only global skills
 gym warmup --scope project          # Only project skills
+gym warmup --dir org/unit           # As seen from that folder
+gym warmup --no-inherit             # Nearest folder scope only
 ```
+
+`gym warmup` is effective by default: the global scope plus every folder scope on the chain, the nearest holder of a name winning. `--no-inherit` keeps only the nearest folder scope. JSON rows carry `folder` (scope root of a project skill) and `depth` (0 is the innermost folder; the global scope follows the last folder).
 
 **What is progressive disclosure?**
 
