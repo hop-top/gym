@@ -186,7 +186,7 @@ when: |
   payload.data_class == '' && payload.max_data_class == '' &&
   payload.data_class_over == false && payload.data_class_escalated == false &&
   payload.approval_state == '' && payload.folder == '' &&
-  payload.source_kind == '' && payload.requested == '' && payload.resolved == '' &&
+  payload.source_kind == '' && payload.source_host == '' && payload.requested == '' && payload.resolved == '' &&
   payload.lock_present == false && payload.digest_pin_conflict == false
 effect: deny
 severity: deny
@@ -242,6 +242,39 @@ message: folder seen
 		Skill: "s", SourceURL: "u", Scope: "global",
 	}, cfg); err != nil {
 		t.Fatalf("global install (no folder) denied: %v", err)
+	}
+}
+
+// source_host of an install or upgrade plan reaches the policies.
+func TestGateInstall_SourceHostReachesPolicies(t *testing.T) {
+	dir := t.TempDir()
+	const policy = `name: zz-host
+when: payload.source_host == 'files.corp.example'
+effect: deny
+severity: deny
+message: host seen
+`
+	if err := os.WriteFile(filepath.Join(dir, "zz.yaml"), []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := startGuardBus(t, guard.LoadOptions{UserDir: dir})
+	cfg := guard.GateConfig{Timeout: 3 * time.Second}
+	err := guard.GateInstall(context.Background(), b, events.SkillInstallRequestedPayload{
+		Skill: "s", SourceURL: "https://files.corp.example/s.zip", SourceHost: "files.corp.example", Scope: "global",
+	}, cfg)
+	if !errors.Is(err, guard.ErrPolicyDeny) || !strings.Contains(err.Error(), "zz-host: host seen") {
+		t.Fatalf("install source_host not visible: %v", err)
+	}
+	err = guard.GateUpgrade(context.Background(), b, events.SkillUpgradePlannedPayload{
+		Items: []events.UpgradePlanItem{{Skill: "s", Scope: "global"}}, SourceHost: "files.corp.example",
+	}, cfg)
+	if !errors.Is(err, guard.ErrPolicyDeny) || !strings.Contains(err.Error(), "zz-host: host seen") {
+		t.Fatalf("upgrade source_host not visible: %v", err)
+	}
+	if err := guard.GateInstall(context.Background(), b, events.SkillInstallRequestedPayload{
+		Skill: "s", SourceURL: "/local", Scope: "global",
+	}, cfg); err != nil {
+		t.Fatalf("local source denied: %v", err)
 	}
 }
 

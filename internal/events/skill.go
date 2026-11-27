@@ -58,10 +58,13 @@ type SkillInstallRequestedPayload struct {
 	DataClassOver      bool     `json:"data_class_over,omitempty"`
 	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
 	ApprovalState      string   `json:"approval_state,omitempty"`
-	// Where the skill came from: registry|git|dir, what the operator pinned
+	// Where the skill came from: registry|git|dir|archive, what the operator pinned
 	// (version or ref), the git commit staged, whether a lock entry applied,
 	// and whether lock and registry disagreed about its digest.
-	SourceKind        string `json:"source_kind,omitempty"`
+	SourceKind string `json:"source_kind,omitempty"`
+	// SourceHost is the network host the source is fetched from; empty
+	// for a local source.
+	SourceHost        string `json:"source_host,omitempty"`
 	Requested         string `json:"requested,omitempty"`
 	Resolved          string `json:"resolved,omitempty"`
 	LockPresent       bool   `json:"lock_present,omitempty"`
@@ -136,10 +139,13 @@ type SkillUpgradePlannedPayload struct {
 	DataClassOver      bool     `json:"data_class_over,omitempty"`
 	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
 	ApprovalState      string   `json:"approval_state,omitempty"`
-	// Where the skill came from: registry|git|dir, what the operator pinned
+	// Where the skill came from: registry|git|dir|archive, what the operator pinned
 	// (version or ref), the git commit staged, whether a lock entry applied,
 	// and whether lock and registry disagreed about its digest.
-	SourceKind        string `json:"source_kind,omitempty"`
+	SourceKind string `json:"source_kind,omitempty"`
+	// SourceHost is the network host the source is fetched from; empty
+	// for a local source.
+	SourceHost        string `json:"source_host,omitempty"`
 	Requested         string `json:"requested,omitempty"`
 	Resolved          string `json:"resolved,omitempty"`
 	LockPresent       bool   `json:"lock_present,omitempty"`

@@ -168,6 +168,20 @@ func TestPayloadsRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "SkillInstallRequestedSourceHost",
+			payload: events.SkillInstallRequestedPayload{
+				Skill: "lint", SourceURL: "https://files.corp.example/lint.tar.gz", Scope: "project",
+				SourceKind: "archive", SourceHost: "files.corp.example", RequestID: "01HZ-req-3c",
+			},
+		},
+		{
+			name: "SkillUpgradePlannedSourceHost",
+			payload: events.SkillUpgradePlannedPayload{
+				Items:      []events.UpgradePlanItem{{Skill: "lint", Scope: "project", From: "1.0.0"}},
+				SourceHost: "files.corp.example", RequestID: "01HZ-req-5c",
+			},
+		},
+		{
 			name: "SkillUpgradePlannedFolder",
 			payload: events.SkillUpgradePlannedPayload{
 				Items:     []events.UpgradePlanItem{{Skill: "lint", Scope: "project", From: "1.0.0"}},
