@@ -25,7 +25,8 @@ make fmt
 - `cmd/gym`: main entrypoint
 - `internal/cli`: Cobra command tree + Viper CLI config/env + TUI/REPL
 - `internal/config`: user/project config merge; mutation helpers
-- `internal/project`: project root detection; `.gym/` dir constants
+- `internal/project`: project root detection (`DetectRoot`, `IsRoot`); `.gym/` dir constants
+- `internal/scope`: `Chain(dir)`, the folder scope roots that apply to a directory, with the ownership and `$HOME` rules
 - `internal/registry`: `skills.json` fetch/merge; curated labeling; index store
 - `internal/install`: stage source (git clone / local dir); validate (`skills-ref`); copy into install path; scan for policies
 - `internal/state`: installed skill store (global + project)
@@ -47,17 +48,26 @@ make fmt
 - Config sources (YAML; paths from kit's `OptionsForToolWithMarkersFrom`):
   - system: `/etc/gym/config.yaml`
   - user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else OS default: Linux `~/.config/gym`, macOS `~/Library/Application Support/gym`)
-  - project: nearest `.gym/config.yaml` at or above cwd
+  - folder scopes: the `.gym/config.yaml` of every root on the chain (`scope.Chain`), folded outermost to innermost
   - legacy: `config.json` is accepted as a fallback for user and project (`config.yaml` wins); writes always target `config.yaml`, seeded from `config.json` when only that exists
   - `internal/xdg` treats the install as XDG-style when any of `~/.config|.local/share|.local/state|.cache/gym` exists and then uses the previous location for every kind whose `XDG_*` variable is unset (decided once for all kinds: macOS native config/data/state coincide)
   - `-c <file>`: kit's `-c/--config` flag; `PersistentPreRunE` passes `Root.ConfigArgs()` files and overrides into the loader
-- Precedence: defaults < system < user < project < `-c <file>` < `-c key=value`.
+- Precedence: defaults < system < user < folder chain (outermost to innermost) < `-c <file>` < `-c key=value`.
 - Merge strategy (kit): scalars replace, maps merge, lists replace (no append across layers).
-- The project layer is repository content and is not handed to kit with the others. `loadConfigWarn` loads defaults+system+user through kit, reads the project file alone (`readProjectLayer`, `internal/config/project_layer.go`), copies only the allowlisted keys onto the result (`projectKeys`: `install_paths`, `repositories`, `curation`, `upgrade`; `admission` goes through `loadAdmission`'s clamp), then applies `-c` files and overrides unrestricted. Any other key warns once (`config: ignoring project key "<key>" (user/system/-c only)`), so a key added to `Config` is ignored from a project until listed. `LoadMergedConfigWarn` returns the warnings; the CLI prints them.
-- Project `install_paths` (`sanitizeProjectPaths`): relative, no `..` escape, no `~`, inside the project root after `ResolveExisting` (symlinks on the existing prefix); kept entries are made absolute against the project root. `normalizePaths` anchors operator-layer relative project paths at the project root too, never the working directory.
+- The folder layers are repository content and are not handed to kit with the others. `loadChained` (`internal/config/chain.go`; `LoadScoped` for a given scope root, `loadConfigWarn` for a cwd) loads defaults+system+user through kit, reads each folder file alone (`readProjectLayer`, `internal/config/project_layer.go`), outermost first, copies only the allowlisted keys onto the result (an inner folder's key replaces an outer one's) (`projectKeys`: `install_paths`, `repositories`, `curation`, `upgrade`; `admission` goes through `loadAdmission`, which folds each folder with `foldAdmission` and the `Clamp*` functions: an inner folder can only tighten), then applies `-c` files and overrides unrestricted. Any other key warns once (`config: ignoring project key "<key>" (user/system/-c only)`), so a key added to `Config` is ignored from a project until listed. `LoadMergedConfigWarn` returns the warnings; the CLI prints them.
+- Folder `install_paths` (`sanitizeProjectPaths`): relative, no `..` escape, no `~`, inside the folder that wrote them after `ResolveExisting` (symlinks on the existing prefix); kept entries are made absolute against the scope root being operated on (and must stay inside it), so an inherited relative path lands in each folder's own tree. `normalizePaths` anchors operator-layer relative project paths at the project root too, never the working directory.
 - Mutations (`AddInstallPath`, `AddRepository`, `RemoveRepository`) write one key via kit `SetValue`, preserving the rest of the file.
 - Struct fields carry `yaml` tags; kit matches keys (files and `-c key=value`) by them.
 - `-c/--config` is hidden from default `--help` by kit; `execCobra` calls `Root.ApplyGroupVisibility` so `--help-all` reveals it.
+
+### Folder scopes
+
+- `internal/scope.Chain(dir)`: roots from `dir` up, innermost first; stops at `$HOME` (inclusive) or the filesystem root. An ancestor root counts only if its `.gym` is owned by the current user and not group/world-writable (`ownedByMe`, a variable so tests can inject a foreign owner; `owner_other.go` is a permissive stub for platforms without POSIX owner and mode). `dir` itself is never tested.
+- The CLI resolves a scope in `internal/cli/scope_flags.go`: `applyDirFlag` (PersistentPreRunE) validates `--dir`, `loadScopeAt(start, exact)` runs `Chain`, loads the chain config and fills `runtime.ProjectRoot`/`Chain`. `exact` (learn, `--dir`) makes `start` the scope root even before it holds a `.gym`; otherwise the root is the nearest chain root.
+- Per-scope reads go through `skillLayers` (`list.go`): records are checked with `trustedRecordsAt` against their own scope root; `resolveEffective` marks shadowed names. `warmup` keeps the winners only.
+- `train` (`train.go`): `trainScope` plans and runs one scope; `--recursive` finds scopes with `findScopeRoots` and runs `trainScope` per root, collecting failures. `upgrade.PlanItem.Root` is the scope root of a project item.
+- Guard policies: `LoadOptions.ProjectDirs` takes each chain root's `.gym/policies`, outermost first; the engine is built once per process from the command's start folder, so `train -r` evaluates the policies of that folder's chain.
+- Config keys that arrive later (network policy, frozen lock, pin requirement) join `foldAdmission` in `internal/config/chain.go`, each with its own clamp.
 
 ## Registry Refresh
 
@@ -143,6 +153,7 @@ Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `o
 
 | Field | Type | Meaning |
 |-------|------|---------|
+| `folder` | string | scope root of a project scope install or plan; `` for global (also on `SkillInstallCompletedPayload`) |
 | `manifest_present` | bool | `gym.json` found and valid |
 | `manifest_mode` | string | `admission.require_manifest`: `off`/`warn`/`reject` |
 | `digest` | string | computed `sha256:<hex>` |
@@ -180,6 +191,8 @@ Upgrade selection is planned in `internal/upgrade.Plan`:
   - upgrade project skills
   - by default also upgrade matching global installs
   - `--no-global` disables mirroring
+- the project scope is the folder scope at `--dir`, else the nearest root; `Input.ProjectRoot` becomes `PlanItem.Root`
+- `--recursive` plans each nested scope separately (see Folder scopes)
 
 ## Kit primitive adoption
 
