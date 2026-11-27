@@ -83,7 +83,7 @@ gym publishes and subscribes on `kit/runtime/bus` for decoupled coordination wit
 - Baked-in policies: sudo, curl|bash, secrets, egress in hooks, large binaries, suspicious chmod, /etc/hosts edits, postinstall scripts, package installer shells.
 - `--strict` fails-closed; `--insecure` downgrades DENY to WARN.
 - `gym guard list` shows effective policies; `gym guard test <skill>` dry-runs.
-- User/project policy overrides in `$XDG_CONFIG_HOME/gym/policies/` and `<root>/.gym/policies/`.
+- User policy overrides (redefine, `disable:`, `relax:`) in `$XDG_CONFIG_HOME/gym/policies/`. Project policies in `<root>/.gym/policies/` can only add policies; attempts to redefine, disable or relax others are ignored with a warning.
 
 ### Skill admission
 

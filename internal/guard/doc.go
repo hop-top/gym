@@ -15,9 +15,12 @@
 // Policies are plain YAML files. Built-in defaults live in
 // internal/guard/policies/. User overrides live in
 // $XDG_CONFIG_HOME/gym/policies/, project overrides in
-// <root>/.gym/policies/. Override files can either redefine a policy
-// (same name wins) or supply a top-level policies.yaml with disable: /
-// relax: declarations.
+// <root>/.gym/policies/. User files can redefine a policy (same name
+// wins) or supply a top-level policies.yaml with disable: / relax:
+// declarations. The project dir is repository content and is
+// add-only: it may add policies and disable/relax its own, but a file
+// colliding with a built-in/user policy name, or a disable:/relax:
+// entry naming a policy it did not define, is ignored with a warning.
 //
 // # Activation shape
 //
