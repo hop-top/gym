@@ -1,14 +1,20 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	kitconfig "hop.top/kit/go/core/config"
 
+	"gopkg.in/yaml.v3"
+
 	"hop.top/gym/internal/project"
+	"hop.top/gym/internal/xdg"
 )
 
 const AppName = "gym"
@@ -81,15 +87,58 @@ func normalizePaths(cfg *Config, cwd string) {
 }
 
 // projectMarkers are the project config locations kit walks up from cwd.
+// Kit tries them in order per directory, so config.yaml wins over a legacy
+// config.json in the same .gym directory.
 var projectMarkers = []string{
 	filepath.Join(project.ProjectDirName, project.ProjectConfigFile),
+	filepath.Join(project.ProjectDirName, project.ProjectLegacyConfigFile),
+}
+
+const (
+	userConfigFile       = "config.yaml"
+	userLegacyConfigFile = "config.json"
+)
+
+// userConfigDir is the user config directory, honoring the previous
+// XDG-style location for existing installs (see internal/xdg).
+func userConfigDir() (string, error) {
+	dirs, err := xdg.AppDirs(AppName)
+	if err != nil {
+		return "", err
+	}
+	return dirs.ConfigHome, nil
+}
+
+// userConfigPath is the user layer file: config.yaml, else an existing
+// config.json from before YAML became canonical, else the canonical path.
+func userConfigPath() string {
+	dir, err := userConfigDir()
+	if err != nil || dir == "" {
+		return ""
+	}
+	if fileExists(filepath.Join(dir, userConfigFile)) {
+		return filepath.Join(dir, userConfigFile)
+	}
+	if legacy := filepath.Join(dir, userLegacyConfigFile); fileExists(legacy) {
+		return legacy
+	}
+	return filepath.Join(dir, userConfigFile)
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 // layerOptions returns kit's system, user and project config locations for
-// gym: /etc/gym/config.yaml, <user config dir>/config.yaml and the nearest
-// .gym/config.yaml at or above cwd.
+// gym: /etc/gym/config.yaml, the user config file (see userConfigPath) and
+// the nearest .gym/config.yaml or .gym/config.json at or above cwd.
 func layerOptions(cwd string) kitconfig.Options {
-	return kitconfig.OptionsForToolWithMarkersFrom(cwd, AppName, projectMarkers)
+	opts := kitconfig.OptionsForToolWithMarkersFrom(cwd, AppName, projectMarkers)
+	if p := userConfigPath(); p != "" {
+		opts.UserConfigPath = p
+	}
+	return opts
 }
 
 // loadConfig layers defaults < opts' system/user/project files < extra
@@ -165,29 +214,108 @@ type writeTarget struct {
 	path  string
 }
 
-// resolveConfigPath maps target ("user" or "project") to the file kit
-// reads for that layer. A project target without an existing project
-// config falls back to the detected project root, else cwd.
+// resolveConfigPath maps target ("user" or "project") to the canonical
+// config.yaml for that layer. Mutations always land there; when only a
+// legacy config.json exists beside it, its content is first copied over so
+// existing settings survive. The legacy file is never modified. A project
+// target without an existing project config falls back to the detected
+// project root, else cwd.
 func resolveConfigPath(cwd, target string) (writeTarget, error) {
 	opts := layerOptions(cwd)
+	var wt writeTarget
 	switch target {
 	case "user":
 		if opts.UserConfigPath == "" {
 			return writeTarget{}, errors.New("cannot resolve user config path")
 		}
-		return writeTarget{kitconfig.ScopeUser, opts, opts.UserConfigPath}, nil
+		canon := filepath.Join(filepath.Dir(opts.UserConfigPath), userConfigFile)
+		opts.UserConfigPath = canon
+		wt = writeTarget{kitconfig.ScopeUser, opts, canon}
 	case "project":
-		if opts.ProjectConfigPath == "" {
+		var canon string
+		if opts.ProjectConfigPath != "" {
+			canon = filepath.Join(filepath.Dir(opts.ProjectConfigPath), project.ProjectConfigFile)
+		} else {
 			root, ok := project.DetectRoot(cwd)
 			if !ok {
 				root = cwd
 			}
-			opts.ProjectConfigPath = filepath.Join(root, projectMarkers[0])
+			canon = filepath.Join(root, projectMarkers[0])
 		}
-		return writeTarget{kitconfig.ScopeProject, opts, opts.ProjectConfigPath}, nil
+		opts.ProjectConfigPath = canon
+		wt = writeTarget{kitconfig.ScopeProject, opts, canon}
 	default:
 		return writeTarget{}, errors.New(`target must be "user" or "project"`)
 	}
+	if err := adoptLegacy(wt.path); err != nil {
+		return writeTarget{}, err
+	}
+	return wt, nil
+}
+
+// adoptLegacy writes canonical from the config.json beside it when only
+// the legacy file exists. The JSON is decoded and re-marshaled as YAML
+// rather than byte-copied: YAML reads some valid JSON differently (surrogate
+// pair escapes, "\/"). Content that is not JSON must at least be valid YAML,
+// else it is refused rather than half-migrated.
+func adoptLegacy(canonical string) error {
+	if fileExists(canonical) {
+		return nil
+	}
+	legacy := filepath.Join(filepath.Dir(canonical), strings.TrimSuffix(filepath.Base(canonical), ".yaml")+".json")
+	raw, err := os.ReadFile(legacy)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	out, err := jsonToYAML(raw)
+	if err != nil {
+		return fmt.Errorf("legacy config %s: %w", legacy, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(canonical), 0o750); err != nil {
+		return err
+	}
+	return os.WriteFile(canonical, out, 0o644)
+}
+
+func jsonToYAML(raw []byte) ([]byte, error) {
+	var node yaml.Node
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		if yerr := yaml.Unmarshal(raw, &node); yerr != nil {
+			return nil, yerr
+		}
+		return raw, nil
+	}
+	return yaml.Marshal(normalizeJSON(v))
+}
+
+// normalizeJSON turns json.Number into int64 or float64 so YAML emits plain
+// numbers.
+func normalizeJSON(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			t[k] = normalizeJSON(x)
+		}
+	case []any:
+		for i, x := range t {
+			t[i] = normalizeJSON(x)
+		}
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return t.String()
+	}
+	return v
 }
 
 // AddInstallPath appends or replaces an install path in user or project config.

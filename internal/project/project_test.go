@@ -38,3 +38,20 @@ func TestDetectRootReturnsFalseWhenAbsent(t *testing.T) {
 		t.Fatalf("DetectRoot() = (%q, %v), want (\"\", false)", got, ok)
 	}
 }
+
+func TestDetectRootLegacyConfigJSON(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gym"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gym", "config.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := project.DetectRoot(nested); !ok || got != root {
+		t.Fatalf("DetectRoot() = (%q, %v), want (%q, true)", got, ok, root)
+	}
+}
