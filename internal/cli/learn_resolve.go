@@ -79,3 +79,13 @@ func isBareName(tok string) bool {
 	_, _, pinned := splitNamePin(tok)
 	return !pinned
 }
+
+// outOfTreeDir reports whether tok is a plain directory source outside the
+// root of a project or folder lock: installed, never locked.
+func outOfTreeDir(sl scopeLock, scope, tok string) bool {
+	if scope != lock.ScopeProject || !isExistingDir(tok) {
+		return false
+	}
+	_, portable := lock.SourceForLock(sl.Base, tok)
+	return !portable
+}

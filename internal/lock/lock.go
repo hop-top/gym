@@ -309,7 +309,7 @@ func SourceForLock(base, source string) (stored string, portable bool) {
 		p = abs
 	}
 	p = filepath.Clean(p)
-	if base != "" && config.Within(filepath.Clean(base), p) {
+	if base != "" && config.Within(filepath.Clean(base), p) && config.ContainedIn(base, p) {
 		if rel, err := filepath.Rel(base, p); err == nil {
 			return filepath.ToSlash(rel), true
 		}

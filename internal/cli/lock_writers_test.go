@@ -48,25 +48,20 @@ func TestLearnNameAtVersionRecordsRequested(t *testing.T) {
 	}
 }
 
-func TestLearnLockIsSortedAndPortableSourcesAreRelative(t *testing.T) {
+func TestLearnLockIsSortedAndInTreeSourcesAreRelative(t *testing.T) {
 	e := newLkEnv(t, "")
-	inside := lkSkillSrc(t, filepath.Join(e.proj, "mirror"), "zed", "a")
-	outside := lkSkillSrc(t, scratchDir(t), "alpha", "a")
-	e.mustGym(t, "learn", inside)
-	_, _, errs := e.gym(t, "learn", outside)
-	if !strings.Contains(errs, "lock-source-not-portable") {
-		t.Fatalf("outside source must warn lock-source-not-portable:\n%s", errs)
-	}
+	z := lkSkillSrc(t, filepath.Join(e.proj, "mirror"), "zed", "a")
+	a := lkSkillSrc(t, filepath.Join(e.proj, "mirror"), "alpha", "a")
+	e.mustGym(t, "learn", z, a)
 	f := e.loadLock(t)
 	if len(f.Skills) != 2 || f.Skills[0].Name != "alpha" || f.Skills[1].Name != "zed" {
 		t.Fatalf("skills = %+v", f.Skills)
 	}
-	if z, _ := f.Find("zed"); z.Kind != lock.KindDir || z.Source != "mirror/zed" {
-		t.Fatalf("inside source = %+v", z)
+	if got, _ := f.Find("zed"); got.Kind != lock.KindDir || got.Source != "mirror/zed" {
+		t.Fatalf("in-tree source = %+v", got)
 	}
-	if a, _ := f.Find("alpha"); a.Source != outside {
-		t.Fatalf("outside source = %+v", a)
-	}
+	e.mustGym(t, "unlearn", "alpha", "zed")
+	e.mustGym(t, "learn")
 }
 
 func TestLearnGitRefRecordsCommit(t *testing.T) {
