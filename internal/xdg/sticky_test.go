@@ -41,43 +41,29 @@ func mk(t *testing.T, p string) {
 	}
 }
 
-// The "native" directory is driven through XDG_* (so the case is real on
-// Linux, where kit's default equals the previous directory); the previous
-// directory lives under HOME.
-func TestAppDirsStickiness(t *testing.T) {
+// An explicitly set XDG variable always wins, even when it points at a
+// directory without gym and a previous directory exists under HOME. Real on
+// every OS.
+func TestAppDirsEnvSetWins(t *testing.T) {
 	for _, k := range kinds {
-		for _, tc := range []struct {
-			name        string
-			native, old bool
-			wantOld     bool
-		}{
-			{"native-missing old-present uses old", false, true, true},
-			{"native-present beats old", true, true, false},
-			{"neither uses native", false, false, false},
-			{"native-only uses native", true, false, false},
-		} {
-			t.Run(k.name+"/"+tc.name, func(t *testing.T) {
+		for _, withGym := range []bool{false, true} {
+			name := k.name + "/no-gym-subdir"
+			if withGym {
+				name = k.name + "/gym-subdir-present"
+			}
+			t.Run(name, func(t *testing.T) {
 				home := isolate(t)
-				xdgRoot := filepath.Join(t.TempDir(), "xdgroot")
-				mk(t, xdgRoot)
+				xdgRoot := t.TempDir()
 				t.Setenv(k.env, xdgRoot)
-				native := filepath.Join(xdgRoot, "gym")
-				old := filepath.Join(append([]string{home}, append(k.prev, "gym")...)...)
-				if tc.native {
-					mk(t, native)
+				if withGym {
+					mk(t, filepath.Join(xdgRoot, "gym"))
 				}
-				if tc.old {
-					mk(t, old)
-				}
+				mk(t, filepath.Join(append([]string{home}, append(k.prev, "gym")...)...))
 				d, err := xdg.AppDirs("gym")
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := native
-				if tc.wantOld {
-					want = old
-				}
-				if got := k.get(d); got != want {
+				if got, want := k.get(d), filepath.Join(xdgRoot, "gym"); got != want {
 					t.Fatalf("%s = %q, want %q", k.name, got, want)
 				}
 			})

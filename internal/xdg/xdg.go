@@ -49,29 +49,32 @@ func AppDirs(appName string) (Dirs, error) {
 		return Dirs{}, err
 	}
 	return Dirs{
-		ConfigHome: sticky(cfg, appName, ".config"),
-		DataHome:   sticky(data, appName, ".local", "share"),
-		CacheHome:  sticky(cache, appName, ".cache"),
-		StateHome:  sticky(state, appName, ".local", "state"),
+		ConfigHome: sticky(cfg, "XDG_CONFIG_HOME", appName, ".config"),
+		DataHome:   sticky(data, "XDG_DATA_HOME", appName, ".local", "share"),
+		CacheHome:  sticky(cache, "XDG_CACHE_HOME", appName, ".cache"),
+		StateHome:  sticky(state, "XDG_STATE_HOME", appName, ".local", "state"),
 	}, nil
 }
 
-// sticky is the single owner of the previous-directory rule: native (kit's
-// directory) wins when it exists; otherwise an existing previous XDG-style
-// directory under $HOME wins; otherwise native.
-func sticky(native, appName string, prevParts ...string) string {
-	if isDir(native) {
-		return native
-	}
+// sticky is the single owner of the previous-directory rule. An explicitly
+// set XDG variable always wins (kit's directory, as before the move).
+// Otherwise see pick.
+func sticky(native, envVar, appName string, prevParts ...string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return native
 	}
 	prev := filepath.Join(append([]string{home}, append(prevParts, appName)...)...)
-	if isDir(prev) {
-		return prev
+	return pick(native, prev, os.Getenv(envVar) != "")
+}
+
+// pick returns native when the XDG variable is set or native exists;
+// otherwise prev when it exists; otherwise native.
+func pick(native, prev string, envSet bool) string {
+	if envSet || isDir(native) || !isDir(prev) {
+		return native
 	}
-	return native
+	return prev
 }
 
 func isDir(p string) bool {

@@ -49,7 +49,7 @@ make fmt
   - user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else OS default: Linux `~/.config/gym`, macOS `~/Library/Application Support/gym`)
   - project: nearest `.gym/config.yaml` at or above cwd
   - legacy: `config.json` is accepted as a fallback for user and project (`config.yaml` wins); writes always target `config.yaml`, seeded from `config.json` when only that exists
-  - `internal/xdg` keeps the previous `~/.config|.local/share|.local/state|.cache/gym` dir when kit's dir is missing and the previous one exists
+  - `internal/xdg` keeps the previous `~/.config|.local/share|.local/state|.cache/gym` dir when kit's dir is missing, the previous one exists and the matching `XDG_*` variable is unset
   - `-c <file>`: kit's `-c/--config` flag; `PersistentPreRunE` passes `Root.ConfigArgs()` files and overrides into the loader
 - Precedence: defaults < system < user < project < `-c <file>` < `-c key=value`.
 - Merge strategy (kit): scalars replace, maps merge, lists replace (no append across layers).
