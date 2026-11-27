@@ -219,6 +219,91 @@ Endpoints:
 - `GET /_index.json` (debug)
 - `GET /health`
 
+## Trust and safety
+
+### Coach scoring (rsx)
+
+`gym coach hire` now scores coaches using rsx's repository analysis and policy evaluation:
+
+- **Default behavior**: scores are cached for 24 hours. If rsx is unavailable, the hire proceeds with a warning.
+- `--refresh-judgement`: bypass the cache and re-run rsx.
+- `--strict`: fail if rsx is unreachable or times out (fail-closed safety).
+- `--insecure`: lower DENY verdicts to WARN, allowing risky coaches to proceed (use with caution).
+- `--gate-timeout=30s`: override the 30-second wait for rsx to finish (configurable per environment).
+
+`gym coach list` shows the cached score: `score=N/100 (verdict)` per coach.
+
+### Policy guards (CEL)
+
+`gym learn` and `gym train` now gate installations on policy rules designed to catch risky patterns:
+
+- **Default behavior**: warn on violations but allow install. Policy guards check for: `sudo`/`doas`/`pkexec`, `curl|bash` pipes, secret leakage (AWS keys, GitHub tokens), egress in shell hooks, large binaries, suspicious chmod, `/etc/hosts` edits, postinstall scripts, package installer shells.
+- `--strict`: fail (deny) on any violation; allow only on explicit ALLOW verdicts.
+- `--insecure`: downgrade DENY verdicts to WARN, allowing risky skills to install.
+- `--gate-timeout=30s`: override the default 30-second wait for guard evaluation.
+
+List installed policies: `gym guard list`.
+
+Test a skill against all policies (dry-run): `gym guard test <skill-directory>` or `gym guard test manifest.json` (exit 0 = all allow, exit 1 = deny/warn).
+
+### Opting out of gates
+
+Coaches and skills pass through gates by default. To run outside the safety checks:
+
+- `gym coach hire --insecure …` — proceed even on DENY verdicts.
+- `gym learn --insecure …` — proceed even on DENY verdicts.
+- `gym train --insecure …` — proceed even on DENY verdicts.
+
+For project-level policy relaxation, create `.gym/policies/policies.yaml`:
+
+```yaml
+relax: ["no-large-binary"]  # allow large binaries without re-opt-in
+disable: ["no-postinstall-script"]  # completely disable this rule
+```
+
+## Cheat sheets and inline hints
+
+### gym cheat
+
+View hints for gym's commands and installed skills:
+
+```bash
+gym cheat warmup              # hints on `gym warmup` usage
+gym cheat learn               # hints on `gym learn` usage
+gym cheat                     # list all available topics
+```
+
+Cheat sheets are sourced from gym's command structure and the installed skills' metadata (from SKILL.md when available).
+
+### Integrating with tip (optional)
+
+If you use tip (hop.top/tip), export gym's cheat-sheet adapter:
+
+```bash
+gym cheat --tip-export
+# Writes ~/.config/tip/adapters/gym.json
+```
+
+Then enable the bridge to receive inline hints when you run gym commands:
+
+```bash
+export GYM_TIP_BUS_BRIDGE=1
+gym learn …
+# tip can now suggest gym-related hints based on observed commands
+```
+
+To disable, unset the env var or don't export the adapter.
+
+## Event bus and daemon mode
+
+`gym serve --daemon` persists events to a local SQLite bus at `$XDG_STATE_HOME/gym/bus.sqlite`:
+
+- `--bus memory` — events live in RAM (default for CLI; lost on exit).
+- `--bus sqlite` — events persist to disk (useful for daemons and debugging).
+- `--bus network` — connect to a remote bus via `GYM_BUS_URL` env (multi-host deployments).
+
+Most users stay on the default memory bus. Daemons and multi-host setups use SQLite or network.
+
 ## Files and Locations
 
 - User config: `$XDG_CONFIG_HOME/gym/config.json` (fallback `~/.config/gym/config.json`)
@@ -226,3 +311,7 @@ Endpoints:
 - Global state: `$XDG_STATE_HOME/gym/installed-global.json`
 - Project state: `<project-root>/.gym/installed.json`
 - Local registry cache: `$XDG_DATA_HOME/gym/registry-index.json`
+- Coach judgement cache: `$XDG_CACHE_HOME/gym/judgements/<sha256>.json` (24-hour TTL; bypass with `--refresh-judgement`)
+- Policy overrides (user): `$XDG_CONFIG_HOME/gym/policies/` (YAML files)
+- Policy overrides (project): `<project-root>/.gym/policies/` (YAML files)
+- Daemon bus (SQLite): `$XDG_STATE_HOME/gym/bus.sqlite` (used when `--bus sqlite` or daemon mode)
