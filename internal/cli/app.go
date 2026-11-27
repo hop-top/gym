@@ -376,9 +376,12 @@ func (a *App) runTrainCtx(ctx context.Context, noGlobal bool, patterns []string)
 		GlobalSkills:        globalSkills,
 	})
 	emitOK(ctx, "plan", "train")
+	plan, refusedErr := a.trustedPlan(ctx, plan, rt, projectRoot)
 	if len(plan) == 0 {
-		a.printlnf("no matching installed skills to train")
-		return nil
+		if refusedErr == nil {
+			a.printlnf("no matching installed skills to train")
+		}
+		return refusedErr
 	}
 
 	// Gate the whole upgrade plan via the bus before mutating
@@ -453,7 +456,7 @@ func (a *App) runTrainCtx(ctx context.Context, noGlobal bool, patterns []string)
 	if upgradedCount == 0 {
 		a.printlnf("no upgrades available")
 	}
-	return nil
+	return refusedErr
 }
 
 func (a *App) runPathsList() error {

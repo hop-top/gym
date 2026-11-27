@@ -86,6 +86,10 @@ func rejectionReason(err error) string {
 	if errors.As(err, &ae) {
 		return ae.Reason
 	}
+	var re *install.RefusedError
+	if errors.As(err, &re) {
+		return re.Reason
+	}
 	var ve *install.ValidatorError
 	if errors.As(err, &ve) {
 		return install.ReasonValidatorFailed

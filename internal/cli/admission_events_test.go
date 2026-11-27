@@ -338,6 +338,19 @@ func seedInstalled(t *testing.T, dest, src, installedClass string) string {
 	if err := os.WriteFile(filepath.Join(old, "SKILL.md"), []byte("---\nname: lint\ndescription: old\n---\nOLD\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A global state record is trusted only under a configured or standard
+	// install path: configure dest, as an operator would.
+	cfgPath := filepath.Join(dirs.ConfigHome, "config.yaml")
+	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("install_paths:\n  - {name: seeded, path: " + dest + ", scope: global}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	err = state.SaveGlobal(dirs.StateHome, []state.InstalledSkill{{
 		Name: "lint", Version: "1.0.0", SourceURL: src, InstallPath: old, DataClass: installedClass,
 	}})
