@@ -162,16 +162,17 @@ func (a AdmissionConfig) validate(allowUnset bool) error {
 
 // loadAdmission resolves the admission block through kit, layer by layer:
 //
-//  1. defaults + system + user (project path cleared) -> base
-//  2. the project layer alone, no defaults -> proj ("" / false = unset)
-//  3. base tightened by proj via the Clamp* functions
-//  4. extra config files and key=value overrides applied after the
+//  1. defaults + system + user (project layers cleared) -> base
+//  2. each folder layer alone, no defaults ("" / false = unset), folded
+//     outermost to innermost into base via the Clamp* functions
+//  3. extra config files and key=value overrides applied after the
 //     clamp, from the clamped value as defaults
 //
-// Operator-supplied layers (step 4) are trusted and may raise or lower.
-// The path selection in opts is the one the base loader uses, so legacy
-// config.json discovery and the previous-dir rule apply here too.
-func loadAdmission(opts kitconfig.Options, paths []string, overrides map[string]any) (AdmissionConfig, error) {
+// layers are config file paths, outermost first. Operator-supplied layers
+// (step 3) are trusted and may raise or lower. The path selection in opts
+// is the one the base loader uses, so legacy config.json discovery and the
+// previous-dir rule apply here too.
+func loadAdmission(opts kitconfig.Options, layers []string, paths []string, overrides map[string]any) (AdmissionConfig, error) {
 	defaults := defaultConfig()
 	baseOpts := opts
 	baseOpts.Defaults = &defaults
@@ -186,25 +187,22 @@ func loadAdmission(opts kitconfig.Options, paths []string, overrides map[string]
 		return AdmissionConfig{}, err
 	}
 
-	var proj Config
-	if opts.ProjectConfigPath != "" {
-		keys, err := readProjectLayer(opts.ProjectConfigPath)
+	clamped := base.Admission
+	for _, path := range layers {
+		keys, err := readProjectLayer(path)
 		if err != nil {
 			return AdmissionConfig{}, err
 		}
+		var layer Config
 		if v, ok := keys[projectAdmissionKey]; ok {
-			if err := decodeKey(v, &proj.Admission); err != nil {
-				return AdmissionConfig{}, fmt.Errorf("load config %s: %w", opts.ProjectConfigPath, err)
+			if err := decodeKey(v, &layer.Admission); err != nil {
+				return AdmissionConfig{}, fmt.Errorf("load config %s: %w", path, err)
 			}
 		}
-		if err := proj.Admission.validate(true); err != nil {
-			return AdmissionConfig{}, fmt.Errorf("%s: %w", opts.ProjectConfigPath, err)
+		if err := layer.Admission.validate(true); err != nil {
+			return AdmissionConfig{}, fmt.Errorf("%s: %w", path, err)
 		}
-	}
-	clamped := AdmissionConfig{
-		MaxDataClass:    ClampMaxDataClass(base.Admission.MaxDataClass, proj.Admission.MaxDataClass),
-		RequireManifest: ClampManifestMode(base.Admission.RequireManifest, proj.Admission.RequireManifest),
-		RequireApproval: ClampRequireApproval(base.Admission.RequireApproval, proj.Admission.RequireApproval),
+		clamped = foldAdmission(clamped, layer.Admission)
 	}
 
 	var out Config

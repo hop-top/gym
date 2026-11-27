@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
-	"hop.top/gym/internal/project"
 )
 
 // A project's .gym/config.yaml (or config.json) is repository content:
@@ -69,9 +67,13 @@ func decodeKey(v any, dst any) error {
 	return yaml.Unmarshal(b, dst)
 }
 
-// applyProjectLayer copies the allowed keys of the project layer at path
-// onto cfg and returns one warning per ignored key.
-func applyProjectLayer(cfg *Config, path string) ([]string, error) {
+// applyProjectLayer copies the allowed keys of the folder layer at path
+// onto cfg and returns one warning per ignored key. Layers are applied
+// outermost to innermost, so an inner layer's key replaces an outer one's.
+// anchor is the scope root that relative install paths resolve against:
+// the folder being operated on, which is the layer's own folder only for
+// the innermost layer.
+func applyProjectLayer(cfg *Config, path, anchor string) ([]string, error) {
 	keys, err := readProjectLayer(path)
 	if err != nil || len(keys) == 0 {
 		return nil, err
@@ -98,7 +100,7 @@ func applyProjectLayer(cfg *Config, path string) ([]string, error) {
 		case "install_paths":
 			var paths []InstallPath
 			if derr = decodeKey(keys[k], &paths); derr == nil {
-				kept, w := sanitizeProjectPaths(paths, root)
+				kept, w := sanitizeProjectPaths(paths, root, anchor)
 				warnings = append(warnings, w...)
 				if len(kept) > 0 || len(paths) == 0 {
 					cfg.InstallPaths = kept
@@ -121,17 +123,27 @@ func applyProjectLayer(cfg *Config, path string) ([]string, error) {
 	return warnings, nil
 }
 
-// sanitizeProjectPaths keeps the project install paths that stay inside
-// root: relative, no escaping "..", no "~", and (after resolving symlinks
-// along the existing prefix) strictly beneath root. Kept paths are made absolute
-// against root. Each dropped entry yields a warning.
-func sanitizeProjectPaths(in []InstallPath, root string) ([]InstallPath, []string) {
+// sanitizeProjectPaths keeps the folder install paths that stay inside
+// root, the folder that defined them: relative, no escaping "..", no "~",
+// and (after resolving symlinks along the existing prefix) strictly beneath
+// root. A kept path is made absolute against anchor, the scope root being
+// operated on, and must stay inside it too (an inherited ".claude/skills"
+// installs into each folder's own copy, never into an ancestor's). Each
+// dropped entry yields a warning.
+func sanitizeProjectPaths(in []InstallPath, root, anchor string) ([]InstallPath, []string) {
+	if anchor == "" {
+		anchor = root
+	}
 	var out []InstallPath
 	var warnings []string
 	for _, p := range in {
-		abs, ok := projectPathInTree(p.Path, root)
-		if !ok {
+		if _, ok := projectPathInTree(p.Path, root); !ok {
 			warnings = append(warnings, fmt.Sprintf("config: install path %s escapes project %s", p.Path, root))
+			continue
+		}
+		abs, ok := projectPathInTree(p.Path, anchor)
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf("config: install path %s escapes project %s", p.Path, anchor))
 			continue
 		}
 		p.Path = abs
@@ -150,16 +162,4 @@ func projectPathInTree(p, root string) (string, bool) {
 		return "", false
 	}
 	return abs, true
-}
-
-// adminRoot is the root relative operator-layer project install paths
-// resolve against: the project root when one is found, else cwd.
-func adminRoot(projectConfigPath, cwd string) string {
-	if projectConfigPath != "" {
-		return projectRootOf(projectConfigPath)
-	}
-	if root, ok := project.DetectRoot(cwd); ok {
-		return root
-	}
-	return cwd
 }

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"hop.top/gym/internal/project"
+	"hop.top/gym/internal/scope"
 	"hop.top/gym/internal/xdg"
 )
 
@@ -162,45 +163,20 @@ func loadConfig(cwd string, opts kitconfig.Options, paths []string, overrides ma
 	return cfg, err
 }
 
-// loadConfigWarn is loadConfig plus the warnings for ignored project keys.
-//
-// The project layer is repository content, so it is not given to kit with
-// the other layers: kit loads defaults + system + user, the project file is
-// read on its own and only its allowed keys are copied on (see
-// applyProjectLayer), then the operator's -c files and overrides apply on
-// top, unrestricted.
+// loadConfigWarn is loadConfig plus the warnings for ignored project keys
+// and untrusted ancestor folders. The folder scopes that apply to cwd come
+// from scope.Chain; see loadChained for how they layer.
 func loadConfigWarn(cwd string, opts kitconfig.Options, paths []string, overrides map[string]any) (Config, []string, error) {
-	defaults := defaultConfig()
-	baseOpts := opts
-	baseOpts.Defaults = &defaults
-	baseOpts.ProjectConfigPath = ""
-	baseOpts.ExtraConfigPaths = nil
-	baseOpts.Overrides = nil
-
-	var cfg Config
-	if err := kitconfig.Load(&cfg, baseOpts); err != nil {
-		return Config{}, nil, err
+	res := scope.Chain(cwd)
+	anchor := cwd
+	if len(res.Roots) > 0 {
+		anchor = res.Roots[0]
 	}
-	warnings, err := applyProjectLayer(&cfg, opts.ProjectConfigPath)
+	cfg, warnings, err := loadChained(opts, anchor, res.Roots, paths, overrides)
 	if err != nil {
 		return Config{}, nil, err
 	}
-	if len(paths) > 0 || len(overrides) > 0 {
-		var out Config
-		if err := kitconfig.Load(&out, kitconfig.Options{
-			Defaults:         &cfg,
-			ExtraConfigPaths: paths,
-			Overrides:        overrides,
-		}); err != nil {
-			return Config{}, nil, err
-		}
-		cfg = out
-	}
-	if cfg.Admission, err = loadAdmission(opts, paths, overrides); err != nil {
-		return Config{}, nil, err
-	}
-	normalizePaths(&cfg, adminRoot(opts.ProjectConfigPath, cwd))
-	return cfg, warnings, nil
+	return cfg, append(append([]string(nil), res.Warnings...), warnings...), nil
 }
 
 // LoadMergedConfigWarn is LoadMergedConfig that also returns one warning
