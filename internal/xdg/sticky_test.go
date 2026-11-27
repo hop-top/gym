@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"testing"
 
+	kitxdg "hop.top/kit/go/core/xdg"
+
 	"hop.top/gym/internal/xdg"
 )
 
@@ -71,39 +73,78 @@ func TestAppDirsEnvSetWins(t *testing.T) {
 	}
 }
 
-// With XDG_* unset, an existing previous directory is found on every OS;
-// without one, a fresh HOME gets kit's native location.
-func TestAppDirsUnsetXDG(t *testing.T) {
-	for _, k := range kinds {
-		t.Run(k.name+"/old-present", func(t *testing.T) {
+func prevDir(home string, k kind) string {
+	return filepath.Join(append([]string{home}, append(k.prev, "gym")...)...)
+}
+
+// Any previous dir makes the whole install legacy: every kind with its
+// variable unset uses its previous location, existing or not, even when
+// kit's native dir exists (e.g. an interim build created it).
+func TestAppDirsLegacyInstallWholeDecision(t *testing.T) {
+	for _, have := range kinds {
+		t.Run("only-"+have.name+"-previous-exists", func(t *testing.T) {
 			home := isolate(t)
-			old := filepath.Join(append([]string{home}, append(k.prev, "gym")...)...)
-			mk(t, old)
-			d, err := xdg.AppDirs("gym")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := k.get(d); got != old {
-				t.Fatalf("%s = %q, want previous %q", k.name, got, old)
-			}
-		})
-		t.Run(k.name+"/fresh", func(t *testing.T) {
-			home := isolate(t)
-			d, err := xdg.AppDirs("gym")
-			if err != nil {
-				t.Fatal(err)
-			}
-			old := filepath.Join(append([]string{home}, append(k.prev, "gym")...)...)
-			got := k.get(d)
-			if runtime.GOOS == "linux" {
-				if got != old {
-					t.Fatalf("%s = %q, want %q", k.name, got, old)
+			mk(t, prevDir(home, have))
+			// Pre-create kit's native dirs, as an interim build would.
+			for _, f := range []func(string) (string, error){
+				kitxdg.RawConfigDir, kitxdg.RawDataDir, kitxdg.RawStateDir, kitxdg.RawCacheDir,
+			} {
+				n, err := f("gym")
+				if err != nil {
+					t.Fatal(err)
 				}
-				return
+				mk(t, n)
 			}
-			if got == old {
-				t.Fatalf("%s = previous dir %q on fresh HOME, want native", k.name, got)
+			d, err := xdg.AppDirs("gym")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, k := range kinds {
+				if got, want := k.get(d), prevDir(home, k); got != want {
+					t.Fatalf("%s = %q, want %q", k.name, got, want)
+				}
 			}
 		})
+	}
+}
+
+// Mixed env: the set variable wins for its kind, the rest follow the
+// legacy install.
+func TestAppDirsMixedEnv(t *testing.T) {
+	home := isolate(t)
+	mk(t, prevDir(home, kinds[1])) // data previous exists
+	cfgRoot := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgRoot)
+	d, err := xdg.AppDirs("gym")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := d.ConfigHome, filepath.Join(cfgRoot, "gym"); got != want {
+		t.Fatalf("ConfigHome = %q, want %q", got, want)
+	}
+	for _, k := range kinds[1:] {
+		if got, want := k.get(d), prevDir(home, k); got != want {
+			t.Fatalf("%s = %q, want %q", k.name, got, want)
+		}
+	}
+}
+
+// Fresh HOME: native for all kinds. On Linux native equals the previous
+// location, so the macOS-only assertion is that they differ there.
+func TestAppDirsFreshHome(t *testing.T) {
+	home := isolate(t)
+	d, err := xdg.AppDirs("gym")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range kinds {
+		got := k.get(d)
+		if runtime.GOOS == "linux" {
+			if got != prevDir(home, k) {
+				t.Fatalf("%s = %q", k.name, got)
+			}
+		} else if got == prevDir(home, k) {
+			t.Fatalf("%s = previous dir %q on fresh HOME, want native", k.name, got)
+		}
 	}
 }
