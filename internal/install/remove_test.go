@@ -167,3 +167,80 @@ func TestRemoveSkill_OnSkillGoneOnlyWhenLastRecord(t *testing.T) {
 }
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+// Emptied by a removal that failed on the final rmdir: nothing left to
+// lose, so the retry needs no --force.
+func TestRemoveSkill_PartialFailureRetryWithoutForce(t *testing.T) {
+	f := newRemoveFixture(t)
+	f.r.RemoveAll = func(p string) error {
+		ents, _ := os.ReadDir(p)
+		for _, e := range ents {
+			_ = os.RemoveAll(filepath.Join(p, e.Name()))
+		}
+		return errors.New("rmdir: permission denied")
+	}
+	left, res := f.r.RemoveSkill("lint", f.all, f.all)
+	if len(res.Failures) != 1 || res.Failures[0].Reason != ReasonRemoveFailed || len(left) != 1 {
+		t.Fatalf("first run: left=%v res=%+v", left, res)
+	}
+	if ents, _ := os.ReadDir(f.rec.InstallPath); len(ents) != 0 {
+		t.Fatal("setup: tree not emptied")
+	}
+	f.r.RemoveAll = nil
+	left, res = f.r.RemoveSkill("lint", f.all, left)
+	if len(res.Failures) != 0 || len(left) != 0 || exists(f.rec.InstallPath) {
+		t.Fatalf("retry: left=%v res=%+v", left, res)
+	}
+}
+
+func TestRemoveSkill_NestedEmptyDirsRemovedWithoutForce(t *testing.T) {
+	f := newRemoveFixture(t)
+	if err := os.Remove(filepath.Join(f.rec.InstallPath, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(f.rec.InstallPath, "a", "b", "c"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	left, res := f.r.RemoveSkill("lint", f.all, f.all)
+	if len(res.Failures) != 0 || len(left) != 0 || exists(f.rec.InstallPath) {
+		t.Fatalf("left=%v res=%+v", left, res)
+	}
+}
+
+func TestRemoveSkill_SymlinkOnlyTreeIsNotEmpty(t *testing.T) {
+	f := newRemoveFixture(t)
+	target := filepath.Join(filepath.Dir(f.root), "linktarget")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "precious"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(f.rec.InstallPath, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if os.Symlink(target, filepath.Join(f.rec.InstallPath, "l")) != nil {
+		t.Skip("symlinks unavailable")
+	}
+	_, res := f.r.RemoveSkill("lint", f.all, f.all)
+	if len(res.Failures) != 1 || res.Failures[0].Reason != ReasonSkillModified {
+		t.Fatalf("res = %+v", res)
+	}
+	if !exists(f.rec.InstallPath) {
+		t.Fatal("tree with a symlink removed without --force")
+	}
+	if b, err := os.ReadFile(filepath.Join(target, "precious")); err != nil || string(b) != "keep" {
+		t.Fatal("symlink target touched")
+	}
+}
+
+func TestRemoveSkill_EditedFileTreeIsNotEmpty(t *testing.T) {
+	f := newRemoveFixture(t)
+	if err := os.WriteFile(filepath.Join(f.rec.InstallPath, "SKILL.md"), []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, res := f.r.RemoveSkill("lint", f.all, f.all)
+	if len(res.Failures) != 1 || res.Failures[0].Reason != ReasonSkillModified || !exists(f.rec.InstallPath) {
+		t.Fatalf("res = %+v", res)
+	}
+}

@@ -2,7 +2,9 @@ package install
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/state"
@@ -108,7 +110,7 @@ func (r *Remover) removeDir(rec state.InstalledSkill) error {
 	if _, err := os.Lstat(dir); os.IsNotExist(err) {
 		return nil
 	}
-	if !r.Force {
+	if !r.Force && !onlyDirs(dir) {
 		if err := checkUnmodified(rec); err != nil {
 			return err
 		}
@@ -121,6 +123,24 @@ func (r *Remover) removeDir(rec state.InstalledSkill) error {
 		return fmt.Errorf("%s: %s: %w", ReasonRemoveFailed, dir, err)
 	}
 	return nil
+}
+
+// onlyDirs reports whether the tree at dir holds nothing but directories
+// (no files, symlinks or irregular entries, at any depth): nothing to lose,
+// so no modification check. Symlinks are never followed.
+func onlyDirs(dir string) bool {
+	only := true
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			only = false
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return err == nil && only
 }
 
 func checkUnmodified(rec state.InstalledSkill) error {
