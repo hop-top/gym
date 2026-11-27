@@ -206,6 +206,8 @@ message: "why this matched"
 
 3. Document the policy in `docs/agent.md` under the "Policy guards" section.
 
+Never derive a policy allowance from the package under evaluation: `ScanStaging` reads only descriptive manifest fields (`postinstall`, `shell_hook`) and file sizes. The `allow_postinstall` / `large_binary` payload keys stay present and always false so existing expressions keep evaluating; built-in policies do not reference them.
+
 User overrides in `$XDG_CONFIG_HOME/gym/policies/` can disable via `policies.yaml` (`disable: ["my-policy-name"]`), relax from deny to warn (`relax: ["my-policy-name"]`), or redefine by name. `<root>/.gym/policies/` is untrusted repository content: it can only add policies (and disable/relax its own); entries touching built-in or user policies are ignored with a logged warning (`guard.LoadOptions.Logger`).
 
 ## Adding a new toolspec source

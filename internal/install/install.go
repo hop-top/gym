@@ -73,8 +73,6 @@ type ScanResult struct {
 	ShellHook          string
 	Scan               string
 	LargestBinaryBytes int64
-	AllowPostinstall   bool
-	LargeBinary        bool
 }
 
 func defaultValidator(v config.ValidatorConfig) config.ValidatorConfig {

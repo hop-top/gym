@@ -147,7 +147,8 @@ func TestPolicy_NoLargeBinary(t *testing.T) {
 		t.Errorf("no-large-binary missed: %+v", findings)
 	}
 
-	// With opt-in, no finding.
+	// A payload-borne flag is not an opt-in: allowances never come
+	// from the package being evaluated.
 	_, findings = eng.Evaluate(map[string]any{
 		"payload": map[string]any{
 			"largest_binary_bytes": 50 * 1024 * 1024,
@@ -155,8 +156,8 @@ func TestPolicy_NoLargeBinary(t *testing.T) {
 			"allow_postinstall":    true,
 		},
 	})
-	if findingsContain(t, findings, "no-large-binary") {
-		t.Errorf("no-large-binary fired despite opt-in: %+v", findings)
+	if !findingsContain(t, findings, "no-large-binary") {
+		t.Errorf("no-large-binary skipped by payload large_binary flag: %+v", findings)
 	}
 }
 
@@ -188,7 +189,8 @@ func TestPolicy_NoHostsEdit(t *testing.T) {
 	}
 }
 
-// TestPolicy_NoPostinstallScript asserts a postinstall denies without opt-in.
+// TestPolicy_NoPostinstallScript asserts a postinstall denies; a
+// payload-borne allow_postinstall flag does not switch the deny off.
 func TestPolicy_NoPostinstallScript(t *testing.T) {
 	eng := allBuiltinEngine(t)
 	_, findings := eng.Evaluate(map[string]any{
@@ -200,15 +202,14 @@ func TestPolicy_NoPostinstallScript(t *testing.T) {
 		t.Errorf("no-postinstall-script missed: %+v", findings)
 	}
 
-	// With opt-in, no finding.
 	_, findings = eng.Evaluate(map[string]any{
 		"payload": map[string]any{
 			"postinstall":       "echo hello",
 			"allow_postinstall": true,
 		},
 	})
-	if findingsContain(t, findings, "no-postinstall-script") {
-		t.Errorf("no-postinstall-script fired despite opt-in: %+v", findings)
+	if !findingsContain(t, findings, "no-postinstall-script") {
+		t.Errorf("no-postinstall-script skipped by payload allow_postinstall flag: %+v", findings)
 	}
 }
 
@@ -477,4 +478,47 @@ func TestEngine_DeterministicOrder(t *testing.T) {
 // writeFile helper writes bytes to dir/name.
 func writeFile(dir, name string, data []byte) error {
 	return os.WriteFile(filepath.Join(dir, name), data, 0o600)
+}
+
+// TestGuard_ForeignAllowFlagsIgnored asserts a cross-process publisher
+// (map payload) cannot switch the postinstall deny off by carrying
+// allow_postinstall: the flag is not forwarded into the activation.
+func TestGuard_ForeignAllowFlagsIgnored(t *testing.T) {
+	t.Setenv("GYM_BUS_URL", "")
+	t.Setenv("GYM_BUS_PATH", "")
+
+	b, err := eventbus.New(eventbus.Config{Adapter: eventbus.AdapterMemory})
+	if err != nil {
+		t.Fatalf("eventbus.New: %v", err)
+	}
+	defer b.Close(context.Background())
+	g, err := guard.New(b)
+	if err != nil {
+		t.Fatalf("guard.New: %v", err)
+	}
+	if err := g.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer g.Stop()
+
+	resp, err := b.RequestResponse(context.Background(),
+		events.TopicSkillInstallRequested,
+		string(events.TopicPolicyGuardInstallEvaluated),
+		map[string]any{
+			"skill":             "s",
+			"scope":             "global",
+			"paths":             []any{"/home/me/.claude/skills"},
+			"postinstall":       "echo hi",
+			"allow_postinstall": true,
+		}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("RequestResponse: %v", err)
+	}
+	var ev events.PolicyGuardInstallEvaluatedPayload
+	if err := resp.Decode(&ev); err != nil {
+		t.Fatalf("decode verdict: %v", err)
+	}
+	if ev.Verdict != string(guard.VerdictDeny) {
+		t.Errorf("verdict = %q; want deny", ev.Verdict)
+	}
 }

@@ -179,10 +179,13 @@ func (g *Guard) publishVerdict(ctx context.Context, skill, reqID string, verdict
 
 // payloadFromInstall builds the CEL activation map for an install
 // request. Beyond the core install fields, the optional staging-dir scan
-// results (postinstall, shell_hook, scan, largest_binary_bytes,
-// allow_postinstall, large_binary) are copied into the payload map;
-// they are zero values when the publisher did not scan. The "scan"
-// field carries whatever scan text the publisher attached.
+// results (postinstall, shell_hook, scan, largest_binary_bytes) are
+// copied into the payload map; they are zero values when the publisher
+// did not scan. The "scan" field carries whatever scan text the
+// publisher attached. allow_postinstall and large_binary stay in the
+// map, always false, so policy expressions referencing them keep
+// evaluating; an allowance never comes from the package under
+// evaluation.
 func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 	resource := map[string]any{
 		"skill":      p.Skill,
@@ -209,8 +212,8 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"shell_hook":           p.ShellHook,
 		"scan":                 p.Scan,
 		"largest_binary_bytes": p.LargestBinaryBytes,
-		"allow_postinstall":    p.AllowPostinstall,
-		"large_binary":         p.LargeBinary,
+		"allow_postinstall":    false,
+		"large_binary":         false,
 		// Admission facts. Defaults for every key so policies can read
 		// them without has() guards.
 		"manifest_present":     p.ManifestPresent,
@@ -276,8 +279,8 @@ func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
 			"shell_hook":           p.ShellHook,
 			"scan":                 p.Scan,
 			"largest_binary_bytes": p.LargestBinaryBytes,
-			"allow_postinstall":    p.AllowPostinstall,
-			"large_binary":         p.LargeBinary,
+			"allow_postinstall":    false,
+			"large_binary":         false,
 			// Admission facts (see payloadFromInstall).
 			"manifest_present":     p.ManifestPresent,
 			"manifest_mode":        p.ManifestMode,

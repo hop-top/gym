@@ -1,9 +1,8 @@
 name: no-large-binary
 when: |
   has(payload.largest_binary_bytes) &&
-  int(payload.largest_binary_bytes) > 26214400 &&
-  !(has(payload.large_binary) && payload.large_binary == true)
+  int(payload.largest_binary_bytes) > 26214400
 effect: warn
 otherwise: allow
 severity: warn
-message: "install adds a binary larger than 25 MiB without an explicit `large_binary: true` opt-in"
+message: "install adds a binary larger than 25 MiB (relax or disable this policy in your user policies to allow)"

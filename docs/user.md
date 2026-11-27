@@ -307,6 +307,8 @@ A user-dir `.yaml` file whose policy name matches an existing one replaces it.
 
 Project policies (`<project-root>/.gym/policies/`) are repository content and are not trusted to weaken checks. They may add new policies. Disabling or relaxing a policy that is not project-defined, and a project file redefining a built-in or user policy, are ignored with one warning per entry; the built-in/user definition stays in force. A project may disable or relax policies it defines itself.
 
+Allowances come only from you. A skill manifest cannot approve its own postinstall script or large binary: `allow_postinstall` and `large_binary` fields in a manifest are ignored. To permit postinstall scripts or large binaries, relax or disable `no-postinstall-script` / `no-large-binary` as above (user policies dir: `$XDG_CONFIG_HOME/gym/policies/`).
+
 ## Cheat sheets and inline hints
 
 ### gym cheat

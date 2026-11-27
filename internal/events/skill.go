@@ -18,7 +18,7 @@ const (
 // correlated by RequestID; the install path blocks on the verdict.
 //
 // The trailing optional fields (Postinstall, ShellHook, Scan,
-// LargestBinaryBytes, AllowPostinstall, LargeBinary) carry the
+// LargestBinaryBytes) carry the
 // staging-dir scan results that the CEL guard activates on: the install pipeline
 // scans the cloned/staged manifest before publishing and forwards the
 // fields here. Subscribers tolerate them being empty (zero values).
@@ -38,8 +38,6 @@ type SkillInstallRequestedPayload struct {
 	ShellHook          string   `json:"shell_hook,omitempty"`
 	Scan               string   `json:"scan,omitempty"`
 	LargestBinaryBytes int64    `json:"largest_binary_bytes,omitempty"`
-	AllowPostinstall   bool     `json:"allow_postinstall,omitempty"`
-	LargeBinary        bool     `json:"large_binary,omitempty"`
 	ManifestPresent    bool     `json:"manifest_present,omitempty"`
 	ManifestMode       string   `json:"manifest_mode,omitempty"`
 	Digest             string   `json:"digest,omitempty"`
@@ -104,8 +102,6 @@ type SkillUpgradePlannedPayload struct {
 	ShellHook          string            `json:"shell_hook,omitempty"`
 	Scan               string            `json:"scan,omitempty"`
 	LargestBinaryBytes int64             `json:"largest_binary_bytes,omitempty"`
-	AllowPostinstall   bool              `json:"allow_postinstall,omitempty"`
-	LargeBinary        bool              `json:"large_binary,omitempty"`
 	ManifestPresent    bool              `json:"manifest_present,omitempty"`
 	ManifestMode       string            `json:"manifest_mode,omitempty"`
 	Digest             string            `json:"digest,omitempty"`

@@ -64,8 +64,6 @@ func (a *App) installGate(requestID string) install.GateFunc {
 			ShellHook:          scan.ShellHook,
 			Scan:               scan.Scan,
 			LargestBinaryBytes: scan.LargestBinaryBytes,
-			AllowPostinstall:   scan.AllowPostinstall,
-			LargeBinary:        scan.LargeBinary,
 		}, adm)
 		return guard.GateInstall(ctx, a.Bus(), payload, guard.GateConfig{
 			Logger: a.Logger(),
