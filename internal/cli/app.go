@@ -267,17 +267,12 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 	total := int64(len(tokens))
 	for i, tok := range tokens {
 		emitPhaseN(ctx, "resolve", tok, int64(i+1), total)
-		entry := registry.SkillEntry{}
-		if isURLLike(tok) || isExistingDir(tok) {
-			entry = registry.SkillEntry{Name: inferNameFromToken(tok), SourceURL: tok, Version: "0.0.0"}
-		} else {
-			resolved, ok := idx.Find(tok)
-			if !ok {
-				emitFail(ctx, "resolve", tok)
-				return fmt.Errorf("skill %q not found in local registry; run `gym update` or use `gym learn` with a URL", tok)
-			}
-			entry = resolved
+		target, err := resolveLearnToken(tok, idx)
+		if err != nil {
+			emitFail(ctx, "resolve", tok)
+			return err
 		}
+		entry := target.Entry
 		emitOK(ctx, "resolve", tok)
 
 		emitPhaseN(ctx, "install", tok, int64(i+1), total)
@@ -285,6 +280,7 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 		installedSet, err := install.InstallSkillMulti(ctx, install.Request{
 			Entry:         entry,
 			Source:        entry.SourceURL,
+			Ref:           target.Ref,
 			Scope:         scope,
 			PathHint:      pathHint,
 			AgentPatterns: agentPatterns,
