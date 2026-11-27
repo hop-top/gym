@@ -176,7 +176,7 @@ when: |
   size(payload.declared_tools) == 0 && size(payload.undeclared_tools) == 0 &&
   payload.data_class == '' && payload.max_data_class == '' &&
   payload.data_class_over == false && payload.data_class_escalated == false &&
-  payload.approval_state == ''
+  payload.approval_state == '' && payload.folder == ''
 effect: deny
 severity: deny
 message: defaults present
@@ -197,6 +197,40 @@ message: defaults present
 	}, guard.GateConfig{Timeout: 3 * time.Second})
 	if !errors.Is(err, guard.ErrPolicyDeny) || !strings.Contains(err.Error(), "zz-defaults-present: defaults present") {
 		t.Fatalf("upgrade activation lacks admission defaults: %v", err)
+	}
+}
+
+// The folder scope root of an install or upgrade plan reaches the policies.
+func TestGateInstall_FolderReachesPolicies(t *testing.T) {
+	dir := t.TempDir()
+	const policy = `name: zz-folder
+when: payload.folder.startsWith('/org/')
+effect: deny
+severity: deny
+message: folder seen
+`
+	if err := os.WriteFile(filepath.Join(dir, "zz.yaml"), []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := startGuardBus(t, guard.LoadOptions{UserDir: dir})
+	cfg := guard.GateConfig{Timeout: 3 * time.Second}
+
+	err := guard.GateInstall(context.Background(), b, events.SkillInstallRequestedPayload{
+		Skill: "s", SourceURL: "u", Scope: "project", Folder: "/org/unit",
+	}, cfg)
+	if !errors.Is(err, guard.ErrPolicyDeny) || !strings.Contains(err.Error(), "zz-folder: folder seen") {
+		t.Fatalf("install folder not visible to policies: %v", err)
+	}
+	err = guard.GateUpgrade(context.Background(), b, events.SkillUpgradePlannedPayload{
+		Items: []events.UpgradePlanItem{{Skill: "s", Scope: "project"}}, Folder: "/org/unit",
+	}, cfg)
+	if !errors.Is(err, guard.ErrPolicyDeny) || !strings.Contains(err.Error(), "zz-folder: folder seen") {
+		t.Fatalf("upgrade folder not visible to policies: %v", err)
+	}
+	if err := guard.GateInstall(context.Background(), b, events.SkillInstallRequestedPayload{
+		Skill: "s", SourceURL: "u", Scope: "global",
+	}, cfg); err != nil {
+		t.Fatalf("global install (no folder) denied: %v", err)
 	}
 }
 

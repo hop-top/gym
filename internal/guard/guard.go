@@ -206,6 +206,7 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"version":    p.Version,
 		"source_url": p.SourceURL,
 		"scope":      p.Scope,
+		"folder":     p.Folder,
 		"request_id": p.RequestID,
 		// Defaults so policies can call .matches/.exists without has() guards.
 		"postinstall":          p.Postinstall,
@@ -273,6 +274,7 @@ func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
 		"payload": map[string]any{
 			"items":      items,
 			"skills":     skills,
+			"folder":     p.Folder,
 			"request_id": p.RequestID,
 			// Defaults so policies can call .matches/.exists without has() guards.
 			"postinstall":          p.Postinstall,

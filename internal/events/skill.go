@@ -27,12 +27,14 @@ const (
 // facts computed by the install admission stage: manifest presence and
 // requirement mode, content digest and pin status, declared vs
 // undeclared tools, data class vs the operator ceiling, and approval
-// state. Ranks stay in Go; the policies see computed booleans.
+// state. Ranks stay in Go; the policies see computed booleans. Folder is
+// the scope root of a project scope install (empty for global).
 type SkillInstallRequestedPayload struct {
 	Skill              string   `json:"skill"`
 	Version            string   `json:"version,omitempty"`
 	SourceURL          string   `json:"source_url"`
 	Scope              string   `json:"scope"`
+	Folder             string   `json:"folder,omitempty"`
 	Paths              []string `json:"paths,omitempty"`
 	Postinstall        string   `json:"postinstall,omitempty"`
 	ShellHook          string   `json:"shell_hook,omitempty"`
@@ -58,6 +60,7 @@ type SkillInstallCompletedPayload struct {
 	Skill       string `json:"skill"`
 	Version     string `json:"version"`
 	Scope       string `json:"scope"`
+	Folder      string `json:"folder,omitempty"`
 	InstallPath string `json:"install_path"`
 	RequestID   string `json:"request_id,omitempty"`
 }
@@ -99,24 +102,27 @@ type UpgradePlanItem struct {
 // surfaces the worst-offender values at the plan envelope —
 // guard's payloadFromUpgrade activation forwards them.
 type SkillUpgradePlannedPayload struct {
-	Items              []UpgradePlanItem `json:"items"`
-	Postinstall        string            `json:"postinstall,omitempty"`
-	ShellHook          string            `json:"shell_hook,omitempty"`
-	Scan               string            `json:"scan,omitempty"`
-	LargestBinaryBytes int64             `json:"largest_binary_bytes,omitempty"`
-	ManifestPresent    bool              `json:"manifest_present,omitempty"`
-	ManifestMode       string            `json:"manifest_mode,omitempty"`
-	Digest             string            `json:"digest,omitempty"`
-	DigestStatus       string            `json:"digest_status,omitempty"`
-	DigestSource       string            `json:"digest_source,omitempty"`
-	DeclaredTools      []string          `json:"declared_tools,omitempty"`
-	UndeclaredTools    []string          `json:"undeclared_tools,omitempty"`
-	DataClass          string            `json:"data_class,omitempty"`
-	MaxDataClass       string            `json:"max_data_class,omitempty"`
-	DataClassOver      bool              `json:"data_class_over,omitempty"`
-	DataClassEscalated bool              `json:"data_class_escalated,omitempty"`
-	ApprovalState      string            `json:"approval_state,omitempty"`
-	RequestID          string            `json:"request_id"`
+	Items []UpgradePlanItem `json:"items"`
+	// Folder is the scope root of the plan's project items; empty when the
+	// plan holds only global items.
+	Folder             string   `json:"folder,omitempty"`
+	Postinstall        string   `json:"postinstall,omitempty"`
+	ShellHook          string   `json:"shell_hook,omitempty"`
+	Scan               string   `json:"scan,omitempty"`
+	LargestBinaryBytes int64    `json:"largest_binary_bytes,omitempty"`
+	ManifestPresent    bool     `json:"manifest_present,omitempty"`
+	ManifestMode       string   `json:"manifest_mode,omitempty"`
+	Digest             string   `json:"digest,omitempty"`
+	DigestStatus       string   `json:"digest_status,omitempty"`
+	DigestSource       string   `json:"digest_source,omitempty"`
+	DeclaredTools      []string `json:"declared_tools,omitempty"`
+	UndeclaredTools    []string `json:"undeclared_tools,omitempty"`
+	DataClass          string   `json:"data_class,omitempty"`
+	MaxDataClass       string   `json:"max_data_class,omitempty"`
+	DataClassOver      bool     `json:"data_class_over,omitempty"`
+	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
+	ApprovalState      string   `json:"approval_state,omitempty"`
+	RequestID          string   `json:"request_id"`
 }
 
 // SkillUpgradeAppliedPayload is published per-skill after a successful
