@@ -34,6 +34,9 @@ func TestTopicsValidate(t *testing.T) {
 		events.TopicSkillUpgradePlanned,
 		events.TopicSkillUpgradeApplied,
 		events.TopicSkillUpgradeFailed,
+		events.TopicSkillUninstallRequested,
+		events.TopicSkillUninstallCompleted,
+		events.TopicSkillUninstallFailed,
 		events.TopicWarmupMetadataEmitted,
 		events.TopicToolspecCLIPublished,
 		events.TopicCheatHintEmitted,
@@ -178,6 +181,27 @@ func TestPayloadsRoundTrip(t *testing.T) {
 			payload: events.SkillInstallRejectedPayload{
 				Skill: "bad", Scope: "global",
 				Reason: "policy denied: no-curl-bash", RequestID: "01HZ-req-4",
+			},
+		},
+		{
+			name: "SkillUninstallRequested",
+			payload: events.SkillUninstallRequestedPayload{
+				Skill: "lint", Scope: "project", Folder: "/work/proj",
+				Paths: []string{"/work/proj/.gym/skills/lint"}, RequestID: "01HZ-req-5",
+			},
+		},
+		{
+			name: "SkillUninstallCompleted",
+			payload: events.SkillUninstallCompletedPayload{
+				Skill: "lint", Scope: "project", Folder: "/work/proj",
+				Paths: []string{"/work/proj/.gym/skills/lint"}, RequestID: "01HZ-req-5",
+			},
+		},
+		{
+			name: "SkillUninstallFailed",
+			payload: events.SkillUninstallFailedPayload{
+				Skill: "lint", Scope: "project",
+				Reason: "skill-modified", RequestID: "01HZ-req-5",
 			},
 		},
 		{

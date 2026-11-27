@@ -11,6 +11,10 @@ const (
 	TopicSkillUpgradePlanned bus.Topic = "gym.skill.upgrade.planned"
 	TopicSkillUpgradeApplied bus.Topic = "gym.skill.upgrade.applied"
 	TopicSkillUpgradeFailed  bus.Topic = "gym.skill.upgrade.failed"
+
+	TopicSkillUninstallRequested bus.Topic = "gym.skill.uninstall.requested"
+	TopicSkillUninstallCompleted bus.Topic = "gym.skill.uninstall.completed"
+	TopicSkillUninstallFailed    bus.Topic = "gym.skill.uninstall.failed"
 )
 
 // SkillInstallRequestedPayload is published when an install begins.
@@ -142,4 +146,36 @@ type SkillUpgradeFailedPayload struct {
 	Scope     string `json:"scope"`
 	Error     string `json:"error"`
 	RequestID string `json:"request_id,omitempty"`
+}
+
+// SkillUninstallRequestedPayload is published when `gym unlearn` starts
+// removing a skill. Informational: the guard does not gate uninstall.
+// Folder is the scope root (empty for global scope); Paths are the
+// install directories about to be removed.
+type SkillUninstallRequestedPayload struct {
+	Skill     string   `json:"skill"`
+	Scope     string   `json:"scope"`
+	Folder    string   `json:"folder,omitempty"`
+	Paths     []string `json:"paths,omitempty"`
+	RequestID string   `json:"request_id"`
+}
+
+// SkillUninstallCompletedPayload is published once a skill's records and
+// directories are all gone. Paths are the directories removed.
+type SkillUninstallCompletedPayload struct {
+	Skill     string   `json:"skill"`
+	Scope     string   `json:"scope"`
+	Folder    string   `json:"folder,omitempty"`
+	Paths     []string `json:"paths,omitempty"`
+	RequestID string   `json:"request_id"`
+}
+
+// SkillUninstallFailedPayload is published when at least one record of a
+// skill could not be removed. Reason is the stable reason of the first
+// failure (install-path-untrusted, skill-modified, remove-failed, ...).
+type SkillUninstallFailedPayload struct {
+	Skill     string `json:"skill"`
+	Scope     string `json:"scope"`
+	Reason    string `json:"reason"`
+	RequestID string `json:"request_id"`
 }
