@@ -313,7 +313,7 @@ Re-break: C5, C6, C7 ordering (state before dir), C11.
 | dir (mirror) | path or `file://` | filesystem | digest pin | filesystem owner |
 | archive | `*.tar.gz`, `*.tgz`, `*.zip` as path, `file://`, or https URL | as registry | digest of the extracted tree | whoever wrote it |
 
-Archive staging (stdlib `archive/tar`, `compress/gzip`, `archive/zip`; no dependency): extract into a temp dir, then the normal pipeline. Skill root is the archive root, or the sole top-level directory. Rejected: absolute names, `..`, symlinks/hardlinks/devices (consistent with `digest-unsupported-entry`), more than 10 000 entries, more than 256 MiB expanded, duplicate paths: `archive-invalid: <reason>`. Digest is over the extracted tree (`gym.digest/v1`), not the archive bytes (archive metadata is not reproducible, ADR-0002). `gym digest` also accepts an archive. A pack command is a non-goal.
+Archive staging (stdlib `archive/tar`, `compress/gzip`, `archive/zip`; no dependency): extract into a temp dir, then the normal pipeline. Skill root is the archive root, or the sole top-level directory when it is the only entry at the root (a root-level dotfile beside it makes the archive root the skill root). A downloaded archive is bounded by the same 256 MiB, and an archive takes no `#ref`. Rejected: absolute names, `..`, symlinks/hardlinks/devices (consistent with `digest-unsupported-entry`), more than 10 000 entries, more than 256 MiB expanded, duplicate paths (compared case-insensitively): `archive-invalid: <reason>`. Digest is over the extracted tree (`gym.digest/v1`), not the archive bytes (archive metadata is not reproducible, ADR-0002). `gym digest` also accepts an archive. A pack command is a non-goal.
 
 Pin requirements: `admission.require_pin: remote` (2.3) is the knob. Recommendation for an isolated deployment: `require_pin: remote`, `network.mode: allowlist`. `digest-unpinned` stays warn by default, composing with `--strict`.
 
@@ -332,9 +332,12 @@ Enforcement lives in one place, `internal/netpolicy` (new): `Check(rawURL) error
 | Egress | Hook |
 |--------|------|
 | registry `HTTPFetcher`, coach manifest fetch, archive URL | before request and on every redirect (`CheckRedirect`) |
-| git clone/fetch | effective URL from `git ls-remote --get-url <src>` (applies `insteadOf` mirrors), host parsed incl. scp-like form, checked before spawning git; git run with `-c protocol.allow=user -c protocol.https.allow=always -c protocol.ssh.allow=always -c protocol.file.allow=never -c protocol.ext.allow=never` and `GIT_TERMINAL_PROMPT=0` when stdin is not a TTY |
+| git clone/fetch | effective URL from `git ls-remote --get-url <src>` (applies `insteadOf` mirrors), host parsed incl. scp-like form, checked before spawning any network git command (under a non-open mode); git run with `-c protocol.allow=user -c protocol.https.allow=always -c protocol.ssh.allow=always -c protocol.file.allow=user -c protocol.ext.allow=never` and `GIT_TERMINAL_PROMPT=0` when stdin is not a TTY. `file=user`, not `never`: a user-typed local repository or `file://` URL (with or without `#ref`) is a shipped source kind, and git sets `GIT_PROTOCOL_FROM_USER=0` for nested and submodule fetches, which therefore cannot use the file transport (gym passes no `--recurse-submodules` either) |
+| event bus network adapter (`--bus network`, `GYM_BUS_URL`) | `netpolicy.Check` on the hub URL when the bus is built; a denial is a hard `network-denied` error at startup (operator-configured only: flag or env) |
 | upgrade notifier | skipped unless `mode: open` |
 | `judge` (rsx shell-out) | skipped under non-open modes with a warning |
+
+Matching is case-insensitive and by name as written (no IDNA); `host` matches any port, `host:port` one port (defaults: https 443, http 80, ssh and scp-style 22), `*.suffix` matches hosts below the suffix, not the suffix itself. `gym update` goes on past a repository the policy denies, prints one `repository "<name>": network-denied: ...` line per denied one, exits 1 and keeps the cached index. Kit's own `--offline` guard under `http.DefaultTransport` stays as a second layer; gym replaces kit's `PersistentPreRunE`, so gym stamps kit's offline context marker itself.
 
 Errors (reason `network-denied`, hard, not `--insecure`-relaxable, published as `install.rejected` when during an install): `network-denied: host "github.com" not in network.allow_hosts (mode allowlist)`; `network-denied: offline mode forbids network access to "github.com"`. Offline still allows dirs, archives on disk, a cached index (`gym update` is the one command that fails, by design), and lock-driven `learn` from local mirrors.
 
@@ -354,7 +357,7 @@ repositories:
     auth: {type: git-credential}                      # `git credential fill`, Basic
 ```
 
-Rules: token only to the exact host of the repository URL, over https (http only for loopback); `Authorization` is never forwarded across a host change on redirect (Go already strips it; tested); `token_file` must be mode 0600 and owned by the user, else `auth: token file <p> is group/world accessible`; the token is read per request, never cached on disk. Archive https URLs reuse the auth of the repository that listed them (same host only). Git sources use git's own credentials; gym never reads or stores them. Alternatives: static `token` in config (rejected: secret in a file that may be committed or shared), `.netrc` (rejected for v1: no stdlib parser, git-credential covers it), `Authorization` header from env verbatim (rejected: scheme confusion).
+Rules: token only to the exact host of the repository URL, over https (http only for loopback); `Authorization` is never forwarded across a host change on redirect (Go already strips it; tested); `token_file` must be mode 0600 and owned by the user, else `auth: token file <p> is group/world accessible` (the same text when the owner is someone else); the token is read per request, never cached on disk. Archive https URLs reuse the auth of the repository that listed them (same host only). Git sources use git's own credentials; gym never reads or stores them. Alternatives: static `token` in config (rejected: secret in a file that may be committed or shared), `.netrc` (rejected for v1: no stdlib parser, git-credential covers it), `Authorization` header from env verbatim (rejected: scheme confusion).
 
 Never logged, never in state, lock, events, payloads, or `-V` output: tokens, `Authorization`/`Cookie` headers, URL passwords, query tokens (`install.RedactURL`, section 0.4), git/curl stderr (redacted before printing). Test with a canary token string asserted absent from stdout, stderr, state, lock, event bus.
 
@@ -384,7 +387,7 @@ Re-break: D2, D3, D4, D6, D7, D9, D11, D13.
 
 ### Events and payloads
 
-`SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` gain (all `omitempty`, defaulted in guard activation): `folder` (scope root, project scope), `source_kind` (`registry|git|dir` so far), `source_host` (with the sources work), `requested`, `resolved` (commit), `lock_present` (bool: a lock entry was honoured as the pin), `digest_pin_conflict` (bool). `digest_source` gains `lockfile` and `operator`; `digest_status` gains `unpinned-required`. `SkillInstallCompletedPayload` gains `folder`. New uninstall topics (3.3). `topics_roundtrip_test.go` extended.
+`SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` gain (all `omitempty`, defaulted in guard activation): `folder` (scope root, project scope), `source_kind` (`registry|git|dir|archive`), `source_host` (the network host a remote source is fetched from; empty for a local one; for an upgrade plan the one host all items share), `requested`, `resolved` (commit), `lock_present` (bool: a lock entry was honoured as the pin), `digest_pin_conflict` (bool). `digest_source` gains `lockfile` and `operator`; `digest_status` gains `unpinned-required`. `SkillInstallCompletedPayload` gains `folder`. New uninstall topics (3.3). `topics_roundtrip_test.go` extended.
 
 ### Rejection reasons (stable strings)
 
@@ -409,7 +412,7 @@ Exit code: 1 for every error and rejection (unchanged; distinct codes remain a c
 | Lock/registry downgrade to a vulnerable older version | pins | lock wins and is committed/reviewed; conflict warn; registry-newer is not a conflict; `train` never moves pinned entries |
 | Tag moved after pinning | git ref | commit + digest recorded; mismatch is hard `digest-mismatch` |
 | Archive traversal, links, bombs | archive | `archive-invalid` limits; no symlinks; extraction into temp |
-| Git transports (`ext::`, `file`) and redirects | git | `looksLikeURL` prefixes + `protocol.*.allow` + effective-URL host check |
+| Git transports (`ext::`, `file`) and redirects | git | `looksLikeURL` prefixes + `protocol.*.allow` (`ext=never`; `file=user`, so only a location the operator typed can use it, never a nested or submodule fetch) + effective-URL host check |
 | Mirror `insteadOf` hides a public host | network | host checked on the effective URL, not the typed one |
 | Credential in logs/state/lock/events/`.git/config` | all | redaction, password URLs rejected, `.git` not copied, canary test |
 | `unlearn '*'` by script | uninstall | non-TTY glob needs `--yes`; dry-run |

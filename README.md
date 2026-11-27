@@ -97,7 +97,7 @@ Every install and upgrade runs an admission stage after the validator: a SHA-256
 - `gym digest <dir>` prints the digest; `--files` prints the listing.
 - `gym guard approve <skill|dir>` / `gym guard revoke <skill|dir>` record operator approval, bound to the exact digest.
 - `gym guard test <dir>` dry-runs admission and policies; `--max-data-class`, `--approval-state`, `--expect-digest` simulate operator state.
-- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`), `admission.require_pin` (`none|remote|all`) in `config.yaml`; a project config can only tighten them. The digest pin comes from `--digest`, then the lock, then the registry entry. `require_pin: remote` makes registry and git sources need a pin (directories are exempt; archive sources come later). Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
+- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`), `admission.require_pin` (`none|remote|all`) in `config.yaml`; a project config can only tighten them. The digest pin comes from `--digest`, then the lock, then the registry entry. `require_pin: remote` makes registry, git and archive sources need a pin (directories are exempt). Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
 
   ```yaml
   admission:
@@ -145,6 +145,8 @@ Details: [docs/user.md](docs/user.md), [ADR-0003](docs/adr/0003-folder-scopes-lo
 `gym learn` supports:
 - skill names from local merged registry index; `name@version` pins an exact registry version (`pin-unavailable` if the index lacks it)
 - direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories; `url#ref` pins a branch, tag or 40/64-hex commit (`ref-not-found` if absent)
+- archives (`*.tar.gz`, `*.tgz`, `*.zip`) as a path, `file://` URL or https URL: extracted with the standard library (`archive-invalid: <reason>` for traversal, links, devices, duplicates, more than 10 000 entries or 256 MiB), digest over the extracted tree; `gym digest <archive>`
+- a registry (`repositories[].url`) may be an https URL, a `file://` URL or a path to an index file; `repositories[].auth` (`bearer` via `token_env` or `token_file`, or `git-credential`) from user, system or `-c` config only
 - no arguments: restore every skill the scope's lock lists (see Lock)
 - default target is project-local install in `CWD/.gym/skills`; `--dir FOLDER` installs into another folder scope
 - use `--global` (or `-g`) for global install scope
@@ -199,6 +201,10 @@ Known global standards are detected and surfaced in `gym paths` and `gym paths a
 - `~/.gemini/skills`
 - `~/.codex/skills`
 - `~/.windsurf/skills`
+
+### Network policy
+
+`network.mode: open|allowlist|offline` with `network.allow_hosts` (`host`, `host:port`, `*.suffix`) limits which hosts gym contacts: registries, archives, git (the effective URL after `insteadOf`), the event bus. `--offline` is `mode: offline`. Project and folder configs can only tighten. A denial is `network-denied: ...`. Name-based, not address-based; a firewall remains the guarantee. For an isolated deployment combine it with `admission.require_pin: remote`; see [docs/user.md](docs/user.md#network-and-credentials).
 
 ### Serving a registry
 

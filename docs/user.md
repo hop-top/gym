@@ -60,7 +60,7 @@ A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highes
 
 Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`. A root's `.gym/config.yaml` applies to that folder and, merged as described under Folder scopes, to every folder below it.
 
-A project file arrives with a clone, so it is not trusted like your own config. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (which can only tighten). Every other key, including `validator`, is ignored with `config: ignoring project key "<key>" (user/system/-c only)`. Project `install_paths` must be relative and stay inside the project root: an absolute path, a `..` that leaves the tree, a `~` path, or a symlink out of the tree is ignored with `config: install path <p> escapes project <root>`. Relative project paths resolve against the scope root (the folder gym installs into, see Folder scopes), not the directory you run gym from. `.gym/skills` must not be a symlink out of the tree either. Absolute and `~` paths stay fine in user and system config and with `-c`.
+A project file arrives with a clone, so it is not trusted like your own config. A project config can set only `install_paths`, `repositories` (without `auth`: a project's `auth` is ignored with `config: ignoring auth of repository "<name>" in project layer <path> (user/system/-c only)`), `curation`, `upgrade`, `lock.frozen` (on only), `admission` and `network` (both can only tighten). Every other key, including `validator`, is ignored with `config: ignoring project key "<key>" (user/system/-c only)`. Project `install_paths` must be relative and stay inside the project root: an absolute path, a `..` that leaves the tree, a `~` path, or a symlink out of the tree is ignored with `config: install path <p> escapes project <root>`. Relative project paths resolve against the scope root (the folder gym installs into, see Folder scopes), not the directory you run gym from. `.gym/skills` must not be a symlink out of the tree either. Absolute and `~` paths stay fine in user and system config and with `-c`.
 
 `.gym/installed.json` is trusted the same way: `gym train` writes or replaces a recorded skill only when its `install_path` is `<install path>/<skill name>`, a real directory (or absent, never a symlink), under the project root for project skills, or under a configured or standard global install path for global skills. Any other record fails with `install-path-untrusted: <path>`, its directory is not touched, and the remaining records still upgrade. `--insecure` does not relax this. `gym warmup` and `gym cheat` apply the same check and skip an untrusted record with a warning, never reading from its directory.
 
@@ -96,6 +96,9 @@ Choose the folder with `--dir <path>` on `learn`, `train`, `list` and `warmup`. 
 | `admission.max_data_class` | lowest ceiling wins |
 | `admission.require_manifest` | strictest wins |
 | `admission.require_approval` | on if any folder sets it |
+| `admission.require_pin` | strictest wins |
+| `network.mode` | strictest wins (`open < allowlist < offline`) |
+| `network.allow_hosts` | intersection |
 | `install_paths` (scope `project`) | innermost folder that sets it replaces the list |
 | `repositories`, `curation`, `upgrade` | innermost wins |
 | anything else | ignored |
@@ -154,10 +157,13 @@ gym learn <skill-name>
 gym learn <skill-name>@<version>      # that exact registry version
 gym learn <git-url|file-url|dir>
 gym learn <git-url>#<branch|tag|commit>
+gym learn <archive.tar.gz|.tgz|.zip>  # a path, file:// URL or https URL
 gym learn                             # restore every skill the lock lists
 ```
 
-A pin is part of the argument: `@` for registry names, `#` for git sources. `lint@1.2.0` installs exactly that version from the registry index, or fails with `pin-unavailable: lint@1.2.0 not in index (available: 1.3.0)`. `url#v1.2.0` clones that branch or tag; a full 40- or 64-hex commit is fetched directly. An unknown ref fails with `ref-not-found: <ref> at <url>`. Ranges (`^1.2`) do not exist. Directory sources have no version: pin them by digest (below).
+A pin is part of the argument: `@` for registry names, `#` for git sources. `lint@1.2.0` installs exactly that version from the registry index, or fails with `pin-unavailable: lint@1.2.0 not in index (available: 1.3.0)`. `url#v1.2.0` clones that branch or tag; a full 40- or 64-hex commit is fetched directly. An unknown ref fails with `ref-not-found: <ref> at <url>`. Ranges (`^1.2`) do not exist. Directory and archive sources have no version: pin them by digest (below).
+
+Archives (`*.tar.gz`, `*.tgz`, `*.zip`, as a path, a `file://` URL or an https URL) are extracted into a temporary directory with the standard library and then go through the normal pipeline. The skill root is the archive root, or its single top-level directory when that is the only entry (a root-level dotfile beside the directory means the archive root is the skill root). The digest is over the extracted tree, so `gym digest <archive>` equals `gym digest <dir>` of the same files. An archive is refused as `archive-invalid: <reason>` for an absolute name, `..`, a symlink, hardlink or device entry, a duplicate path (compared case-insensitively), more than 10 000 entries, or more than 256 MiB expanded; nothing is installed. An archive takes no `#ref`.
 
 With a lock entry for the name, `gym learn lint` installs what the lock says (`using locked 1.2.0 (gym train to upgrade)`); see [Lock and pins](#lock-and-pins). `gym learn --digest sha256:<hex> <skill|url|dir>` pins one install to a digest without a lock. `--no-lock` installs without reading or writing the lock.
 
@@ -349,7 +355,7 @@ Serve your local merged index as a `skills.json` endpoint:
 gym serve --host 127.0.0.1 --port 4873
 ```
 
-`/skills.json` lists every version of every skill the index holds, each with its `digest` when the index has one, so a client can pin an older version with `name@version`.
+`/skills.json` lists every version of every skill the index holds, each with its `digest` when the index has one, so a client can pin an older version with `name@version`. A client may also read the same file from disk: a repository `url` can be a `file://` URL or a plain path to an index file, and an entry's `source_url` can be an archive (`.tar.gz`, `.tgz`, `.zip`) on your own host.
 
 Endpoints:
 - `GET /skills.json`
@@ -383,6 +389,54 @@ List installed policies: `gym guard list`.
 
 Test a skill against all policies (dry-run): `gym guard test <skill-directory>` or `gym guard test manifest.json` (exit 0 = all allow, exit 1 = deny/warn).
 
+### Network and credentials
+
+`network` decides which hosts gym may contact. One check, by host name, runs before every request, on every redirect, and before git runs:
+
+```yaml
+network:
+  mode: open          # open (default) | allowlist | offline
+  allow_hosts: []     # "host", "host:port", "*.suffix"
+```
+
+- `open`: no restriction. `allowlist`: only the listed hosts. `offline`: no host at all; directory sources, archives on disk, the cached index and lock-driven `learn` from local mirrors keep working, and `gym update` fails by design.
+- `--offline` sets `mode: offline` for the run. There is no `--allow-host` flag: use `-c 'network.allow_hosts=[host]'`.
+- Matching is case-insensitive and by name as written (no IDNA: list the punycode form of an international name). `host` matches that host on any port, `host:port` only that port (https 443, http 80, ssh and scp-style 22 by default), `*.suffix` any host below the suffix but not the suffix itself. Loopback is not implicitly allowed: list `127.0.0.1:4873`.
+- A project or folder `config.yaml` can only tighten: the mode may rise (`open < allowlist < offline`) and `allow_hosts` can only intersect with the list above it. User, system and `-c` layers set it freely.
+- Covered: registry index fetches (and each redirect), coach manifest fetches, archive URLs, git sources (the host of the effective URL, after your `url.<base>.insteadOf` rewrites, so a mirror counts, not the URL you typed), and the event bus network adapter (`GYM_BUS_URL`). Not run unless the mode is `open`: the update notice and the `rsx` coach judgement (a warning says so).
+- A denial is `network-denied: host "github.com" not in network.allow_hosts (mode allowlist)` or `network-denied: offline mode forbids network access to "github.com"`. It is not relaxed by `--insecure`, and during an install it is published as `install.rejected` (reason `network-denied`). `gym update` goes on with the other repositories, prints one `repository "<name>": network-denied: ...` line per denied one, and exits 1 without replacing the cached index.
+- The policy is by host name, not by network path or resolved address: a firewall remains the guarantee.
+
+Git runs with `protocol.allow=user`, https and ssh always, `file` for sources you typed (a local repository or `file://` URL, with or without `#ref`; nested and submodule fetches cannot use it), `ext` never, and with prompts off when stdin is not a terminal (a missing credential fails instead of hanging). gym never asks git for submodules.
+
+Registry credentials, in a user, system or `-c` config (a project or folder `auth` is ignored with a warning, otherwise a cloned repository could point a token at its own host):
+
+```yaml
+repositories:
+  - name: corp
+    url: https://registry.corp.example/skills.json
+    auth: {type: bearer, token_env: GYM_CORP_TOKEN}    # or token_file: ~/.config/gym/corp.token
+  - name: corp2
+    url: https://registry2.corp.example/skills.json
+    auth: {type: git-credential}                       # `git credential fill`, sent as Basic
+```
+
+The token goes only to the exact host (and port) of the repository URL, over https (http only to a loopback host), is dropped on a redirect to another host, port or http, is read on every request and never written to disk. `token_file` must be mode 0600 and owned by you, else `auth: token file <path> is group/world accessible`. An archive URL that a repository lists reuses that repository's credential, for that repository's host only. A git source uses git's own credentials. Tokens, `Authorization` and `Cookie` headers, URL passwords and query tokens are never printed, stored in state or the lock, or published; a URL with a password is refused (`source-credentials-in-url`).
+
+### Isolated deployment
+
+For a machine that must reach only your own hosts, in the user or system config:
+
+```yaml
+admission:
+  require_pin: remote            # registry, git and archive sources need a digest pin
+network:
+  mode: allowlist
+  allow_hosts: [registry.corp.example, files.corp.example]
+```
+
+Publish a registry whose entries carry `digest`, pin the rest with `gym learn --digest` or commit the lock, and use `gym learn` (no arguments) to restore from it. The registry index itself can come from disk: a repository `url` may be a `file://` URL or a plain path.
+
 ### Skill admission
 
 After the validator passes, `gym learn` and `gym train` admit each skill:
@@ -398,7 +452,7 @@ After the validator passes, `gym learn` and `gym train` admit each skill:
 - **Data class ceiling**: `admission.max_data_class` (default `internal`) or `--max-data-class`. A skill above it is denied.
 - **Approval**: `gym guard approve <skill|dir>` records approval for the exact digest; any content change returns the skill to unreviewed. `gym guard revoke <skill|dir>` blocks a skill (all digests) or, with `--digest`, one digest. Records live in `<config-dir>/gym/approvals.json`.
 - **No manifest**: `admission.require_manifest` = `warn` (default), `off`, or `reject`.
-- **Pin required**: `admission.require_pin` = `none` (default), `remote`, or `all`. With `remote`, registry and git sources need a pin from the lock, the registry or `--digest`; directory sources are exempt. `all` also covers directories. An unpinned source is then denied (`admission-digest-required`, reason `digest-required`). A project or folder config can only raise it. Recommended for an isolated deployment: `remote`. (Archive sources arrive with a later change.)
+- **Pin required**: `admission.require_pin` = `none` (default), `remote`, or `all`. With `remote`, registry, git and archive sources need a pin from the lock, the registry or `--digest`; directory sources are exempt. `all` also covers directories. An unpinned source is then denied (`admission-digest-required`, reason `digest-required`). A project or folder config can only raise it. Recommended for an isolated deployment: `remote` with `network.mode: allowlist` (see [Isolated deployment](#isolated-deployment)).
 
 Config (`config.yaml`; a project config can only lower the ceiling, turn approval on, raise the manifest or pin requirement, or turn `lock.frozen` on, relative to what defaults, system and user resolve to):
 
