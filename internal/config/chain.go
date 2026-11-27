@@ -19,6 +19,8 @@ import (
 //   - lock.frozen: or; a folder can turn it on, never off.
 //   - install_paths: the innermost layer that sets it replaces the list;
 //     each entry must stay inside the folder that wrote it.
+//   - network.mode, network.allow_hosts: mode may only rise (open <
+//     allowlist < offline), hosts only intersect (ClampNetwork).
 //   - repositories, curation, upgrade: innermost wins.
 //   - every other key is ignored (see projectKeys).
 //
@@ -92,6 +94,9 @@ func loadChained(opts kitconfig.Options, scopeRoot string, roots []string, paths
 	if err := kitconfig.Load(&cfg, baseOpts); err != nil {
 		return Config{}, nil, err
 	}
+	if err := cfg.Network.validate(false); err != nil {
+		return Config{}, nil, err
+	}
 	layers := layerPaths(roots)
 	var warnings []string
 	for _, path := range layers {
@@ -100,6 +105,9 @@ func loadChained(opts kitconfig.Options, scopeRoot string, roots []string, paths
 			return Config{}, nil, err
 		}
 		warnings = append(warnings, w...)
+		if cfg.Network, err = foldNetworkLayer(cfg.Network, path); err != nil {
+			return Config{}, nil, err
+		}
 	}
 	if len(paths) > 0 || len(overrides) > 0 {
 		var out Config
@@ -114,6 +122,9 @@ func loadChained(opts kitconfig.Options, scopeRoot string, roots []string, paths
 	}
 	var err error
 	if cfg.Admission, err = loadAdmission(opts, layers, paths, overrides); err != nil {
+		return Config{}, nil, err
+	}
+	if err := cfg.Network.validate(false); err != nil {
 		return Config{}, nil, err
 	}
 	normalizePaths(&cfg, scopeRoot)
