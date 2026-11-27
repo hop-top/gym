@@ -103,12 +103,14 @@ func (a *App) recordLock(sl scopeLock, entries []lock.Entry, noLock bool) error 
 	return sl.save(f)
 }
 
-// notLockable reports whether e is a directory install from outside the
-// scope root of a project or folder lock. Such an entry would be refused on
-// read (lock-source-escapes), so it is never written; the skill stays
-// untracked by the lock. Says so on stderr.
+// notLockable reports whether e's stored source is a local path outside the
+// scope root of a project or folder lock: a directory, an archive file, or
+// a registry entry whose source_url is a local path. Such an entry would be
+// refused on read (lock-source-escapes), so it is never written; the skill
+// stays untracked by the lock. Says so on stderr. In-tree local sources
+// are stored relative and are lockable.
 func (a *App) notLockable(sl scopeLock, e lock.Entry) bool {
-	if sl.Scope != lock.ScopeProject || e.Kind != lock.KindDir || !lock.IsLocalSource(e.Source) || !filepath.IsAbs(e.Source) {
+	if sl.Scope != lock.ScopeProject || !lock.IsLocalSource(e.Source) || !filepath.IsAbs(e.Source) {
 		return false
 	}
 	a.Logger().Warnf("%s: %s is outside %s; not written to the lock", lock.FindingNotPortable, e.Source, sl.Base)
@@ -160,6 +162,14 @@ func (t *trainLocks) replace(scope string, e lock.Entry) {
 	}
 	if _, ok := f.Find(e.Name); ok {
 		f.Set(e)
+		t.dirty[scope] = true
+	}
+}
+
+// drop removes a skill's entry: the upgraded install no longer matches what
+// the lock recorded and cannot be recorded (see notLockable).
+func (t *trainLocks) drop(scope, name string) {
+	if f := t.files[scope]; f != nil && f.Remove(name) {
 		t.dirty[scope] = true
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"hop.top/gym/internal/lock"
+	"hop.top/gym/internal/registry"
 )
 
 const notLockedWarning = "lock-source-not-portable: "
@@ -122,5 +123,109 @@ func TestGlobalLockKeepsAbsoluteDirSource(t *testing.T) {
 	}
 	if ent, ok := f.Find("lint"); !ok || ent.Source != out {
 		t.Fatalf("global entry = %+v", f.Skills)
+	}
+}
+
+// The rule is about the stored source, not the kind: a registry entry whose
+// source_url is a local path outside the root is installed and stays
+// untracked, with the same warning; inside the root it is stored relative.
+func TestOutOfTreeRegistrySourceIsInstalledButNotLocked(t *testing.T) {
+	e := newLkEnv(t, "")
+	out := lkSkillSrc(t, scratchDir(t), "lint", "o")
+	in := lkSkillSrc(t, filepath.Join(e.proj, "src"), "fmt", "i")
+	e.index(t,
+		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: out},
+		registry.SkillEntry{Name: "fmt", Version: "1.0.0", SourceURL: in})
+
+	got := e.mustGym(t, "learn", "lint", "fmt")
+	if !strings.Contains(got, notLockedWarning+out+" is outside "+e.proj+"; not written to the lock") {
+		t.Fatalf("warning missing:\n%s", got)
+	}
+	if !installed(filepath.Join(e.proj, ".gym", "skills"), "lint") {
+		t.Fatal("out-of-tree registry skill not installed")
+	}
+	if _, ok := e.loadLock(t).Find("lint"); ok {
+		t.Fatal("out-of-tree registry source was locked")
+	}
+	if ent := e.lockEntry(t, "fmt"); ent.Kind != lock.KindRegistry || ent.Source != "src/fmt" {
+		t.Fatalf("in-tree entry = %+v", ent)
+	}
+	if got := e.mustGym(t, "learn"); !strings.Contains(got, "nothing to restore") {
+		t.Fatalf("restore:\n%s", got)
+	}
+}
+
+// An archive file outside the tree installs untracked; inside it is stored
+// relative. The global lock keeps an absolute archive path.
+func TestArchiveFilePortability(t *testing.T) {
+	e := newLkEnv(t, "")
+	outArch := makeTarGz(t, scratchDir(t), "outer.tar.gz", "outer/", skillFiles("outer", "o"))
+	inArch := makeTarGz(t, filepath.Join(e.proj, "pkgs"), "inner.tar.gz", "inner/", skillFiles("inner", "i"))
+
+	got := e.mustGym(t, "learn", outArch, inArch)
+	if !strings.Contains(got, notLockedWarning+outArch+" is outside "+e.proj+"; not written to the lock") {
+		t.Fatalf("warning missing:\n%s", got)
+	}
+	skills := filepath.Join(e.proj, ".gym", "skills")
+	if !installed(skills, "outer") || !installed(skills, "inner") {
+		t.Fatal("archives not installed")
+	}
+	if _, ok := e.loadLock(t).Find("outer"); ok {
+		t.Fatal("out-of-tree archive was locked")
+	}
+	if ent := e.lockEntry(t, "inner"); ent.Kind != lock.KindArchive || ent.Source != "pkgs/inner.tar.gz" {
+		t.Fatalf("in-tree archive entry = %+v", ent)
+	}
+	// the lock a reader would refuse never exists: it loads and restores.
+	if got := e.mustGym(t, "learn"); !strings.Contains(got, "nothing to restore") {
+		t.Fatalf("restore:\n%s", got)
+	}
+
+	// global scope: the operator's own lock keeps the absolute path.
+	g := e.mustGym(t, "learn", "-g", outArch)
+	if strings.Contains(g, notLockedWarning) {
+		t.Fatalf("global learn warned:\n%s", g)
+	}
+	f, err := lock.Load(filepath.Join(e.dirs.ConfigHome, "lock.json"), lock.ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent, ok := f.Find("outer"); !ok || ent.Kind != lock.KindArchive || ent.Source != outArch {
+		t.Fatalf("global entry = %+v", f.Skills)
+	}
+}
+
+// train never writes an entry a reader would refuse: when the upgraded
+// source is out of tree, the entry is dropped with the warning.
+func TestTrainDropsEntryWhoseNewSourceIsOutOfTree(t *testing.T) {
+	e := newLkEnv(t, "")
+	oldSrc := lkSkillSrc(t, filepath.Join(e.proj, "old"), "lint", "old")
+	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: oldSrc})
+	e.mustGym(t, "learn", "lint")
+	if _, ok := e.loadLock(t).Find("lint"); !ok {
+		t.Fatal("setup: no entry")
+	}
+	newSrc := lkSkillSrc(t, scratchDir(t), "lint", "new")
+	e.index(t,
+		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: oldSrc},
+		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: newSrc})
+	got := e.mustGym(t, "train")
+	if !strings.Contains(got, "upgraded lint") || !strings.Contains(got, notLockedWarning+newSrc) {
+		t.Fatalf("train:\n%s", got)
+	}
+	if _, ok := e.loadLock(t).Find("lint"); ok {
+		t.Fatal("train wrote an out-of-tree source into the project lock")
+	}
+}
+
+// Frozen: an out-of-tree archive changes nothing in the lock, so it installs.
+func TestFrozenOutOfTreeArchive(t *testing.T) {
+	frozen := newLkEnv(t, "lock:\n  frozen: true\n")
+	got := frozen.mustGym(t, "learn", makeTarGz(t, scratchDir(t), "fresh.tar.gz", "fresh/", skillFiles("fresh", "f")))
+	if !strings.Contains(got, notLockedWarning) || !installed(filepath.Join(frozen.proj, ".gym", "skills"), "fresh") {
+		t.Fatalf("frozen out-of-tree archive:\n%s", got)
+	}
+	if _, err := os.Stat(frozen.lockPath()); err == nil {
+		t.Fatal("frozen learn created a lock")
 	}
 }

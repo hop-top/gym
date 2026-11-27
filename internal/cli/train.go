@@ -229,8 +229,13 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		}
 		emitOK(ctx, "upgrade", item.Skill.Name)
 		upgradedCount++
-		locks.replace(item.Scope, a.lockEntryFor(locks.locs[item.Scope],
-			learnTarget{Entry: entry, Kind: lock.KindRegistry}, installed, outcome.Commit))
+		le := a.lockEntryFor(locks.locs[item.Scope],
+			learnTarget{Entry: entry, Kind: lock.KindRegistry}, installed, outcome.Commit)
+		if a.notLockable(locks.locs[item.Scope], le) {
+			locks.drop(item.Scope, le.Name)
+		} else {
+			locks.replace(item.Scope, le)
+		}
 		a.printlnf("upgraded %s (%s): %s -> %s", item.Skill.Name, item.Scope, item.Skill.Version, installed.Version)
 
 		if item.Scope == "global" {
