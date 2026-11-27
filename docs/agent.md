@@ -36,7 +36,7 @@ Train:
 
 Unlearn:
 - remove: `gym unlearn a b`; patterns: `gym unlearn "auth-*" --yes` (non-TTY needs `--yes` for a pattern matching several)
-- preview: `gym unlearn -n a`; global: `-g`; narrow: `--path`, `--agent`
+- preview: `gym unlearn -n a`; global: `-g`; folder scope: `--dir FOLDER` (default CWD, never an ancestor); narrow: `--path`, `--agent`
 - locally edited skill: `skill-modified` until `--force`; absent skill: `skill-not-installed` (`--ignore-missing` => exit 0)
 - aliases: `uninstall`, `remove`, `rm`
 

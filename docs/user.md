@@ -171,11 +171,12 @@ Target selection:
 gym unlearn lint
 gym unlearn 'auth-*' --yes
 gym unlearn lint -g --dry-run
+gym unlearn lint --dir ../other-project
 ```
 
 - aliases: `gym uninstall`, `gym remove`, `gym rm`
 - needs at least one name or pattern (`filepath.Match`, as `train`); removing everything takes an explicit `'*'`
-- scope and targets as `learn`: project by default (`CWD/.gym`), `--global`/`-g`; `--path NAME_OR_PATH`, `--agent` patterns (prefix `!` excludes) pick the install paths to remove from
+- scope and targets as `learn`: project by default (`CWD/.gym`), `--global`/`-g`, or `--dir FOLDER` (not combinable with `-g`); the scope is exactly that folder, never an ancestor: a skill installed only at a parent is `skill-not-installed: ... (installed in: <parent>, global)`; `--path NAME_OR_PATH`, `--agent` patterns (prefix `!` excludes) pick the install paths to remove from
 - `-n/--dry-run` prints `would remove <skill> <dir>` lines and changes nothing
 - an explicit name never prompts; a pattern matching more than one skill asks `remove N skills from <root>? [y/N]` on a terminal, and without one fails with `confirmation-required: pattern matched N skills; pass --yes`. `-y/--yes` skips the prompt
 - per install directory, in order: the record's `install_path` must pass the state trust check (`install-path-untrusted: <path>`, the directory is never touched); the directory is re-hashed against the digest recorded at install, and a difference fails with `skill-modified: <dir> differs from recorded <digest>; --force to remove` (a record with no digest cannot be verified and needs `--force` too; a tree holding only directories, such as one left by an interrupted removal, has nothing to lose and skips the check); the directory is removed; then its record is dropped from `installed.json`, which stays even with an empty list

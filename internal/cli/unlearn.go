@@ -71,24 +71,29 @@ func (a *App) unlearnCobra() *cobra.Command {
 	c.Flags().BoolP("dry-run", "n", false, "print what would be removed; change nothing")
 	c.Flags().BoolP("yes", "y", false, "skip confirmation for patterns matching several skills")
 	c.Flags().Bool("force", false, "remove despite local modification")
+	addDirFlag(c)
 	c.Flags().Bool("ignore-missing", false, "absent skill is not an error")
 	return c
 }
 
-// unlearnScopeRoot is the single place the scope root is resolved: the
-// current directory for project scope, empty for global.
+// unlearnScopeRoot is the single place the scope root is resolved: --dir,
+// else the current directory, for project scope (never an inherited
+// ancestor root); empty for global.
 func (a *App) unlearnScopeRoot(global bool) string {
 	if global {
 		return ""
 	}
-	return a.CWD
+	return a.startDir()
 }
 
 func (a *App) runUnlearnCtx(ctx context.Context, o unlearnOptions) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	rt, err := a.loadRuntime()
+	if o.Global && a.scopeDir != "" {
+		return errDirGlobal
+	}
+	rt, err := a.loadScopeAt(a.startDir(), !o.Global)
 	if err != nil {
 		return err
 	}
@@ -299,15 +304,31 @@ func (a *App) notInstalledError(rt runtime, pattern, scope, root string) error {
 	if scope == "global" {
 		where = "global"
 	}
-	other, otherRoot := "global", ""
-	if scope == "global" {
-		other, otherRoot = "project", a.CWD
-	}
-	recs, err := a.loadScopeRecords(rt, other, otherRoot)
-	if err == nil {
-		if gs, _, _, merr := matchSkills([]string{pattern}, recs); merr == nil && len(gs) > 0 {
-			return fmt.Errorf("%s: %s in %s (installed in: %s)", reasonSkillNotInstalled, pattern, where, other)
+	has := func(sc, r string) bool {
+		recs, err := a.loadScopeRecords(rt, sc, r)
+		if err != nil {
+			return false
 		}
+		gs, _, _, merr := matchSkills([]string{pattern}, recs)
+		return merr == nil && len(gs) > 0
+	}
+	var elsewhere []string
+	if scope == "global" {
+		if has("project", a.startDir()) {
+			elsewhere = append(elsewhere, "project")
+		}
+	} else {
+		for _, anc := range rt.Chain {
+			if anc != root && has("project", anc) {
+				elsewhere = append(elsewhere, anc)
+			}
+		}
+		if has("global", "") {
+			elsewhere = append(elsewhere, "global")
+		}
+	}
+	if len(elsewhere) > 0 {
+		return fmt.Errorf("%s: %s in %s (installed in: %s)", reasonSkillNotInstalled, pattern, where, strings.Join(elsewhere, ", "))
 	}
 	return fmt.Errorf("%s: %s in %s", reasonSkillNotInstalled, pattern, where)
 }
