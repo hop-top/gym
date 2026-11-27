@@ -185,7 +185,7 @@ Config is YAML, layered lowest to highest:
 3. user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else the OS default: `~/.config/gym` on Linux, `~/Library/Application Support/gym` on macOS)
 4. project: nearest `.gym/config.yaml` at or above the working directory
 
-Canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` sits beside it, and the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) are still used while the OS-native one does not exist and the matching `XDG_*` variable is unset (a set variable always wins). Changes made by gym write `config.yaml`, seeded from the old `config.json`, which is left untouched.
+Canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` sits beside it, and the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) are still used, all four together, when any of them exists and the matching `XDG_*` variable is unset (a set variable always wins). Changes made by gym write `config.yaml`, seeded from the old `config.json`, which is left untouched.
 5. extra files: `-c <file>` (repeatable, in order; a missing file is an error)
 6. overrides: `-c key=value` (repeatable; dotted keys nest; value parses as YAML)
 

@@ -2,27 +2,27 @@ package xdg
 
 import "testing"
 
-// pick is the pure stickiness rule; on Linux kit's default equals the
+// pick is the pure per-kind rule; on Linux kit's default equals the
 // previous dir, so the full matrix is only reachable here, on every OS.
 func TestPick(t *testing.T) {
-	tmp := t.TempDir()
-	missing := tmp + "/missing"
 	for _, tc := range []struct {
-		name         string
-		native, prev string
-		envSet       bool
-		want         string
+		name   string
+		envSet bool
+		legacy bool
+		want   string
 	}{
-		{"native missing, prev present, env unset -> prev", missing + "-n", tmp, false, tmp},
-		{"native present beats prev", tmp, t.TempDir(), false, tmp},
-		{"neither -> native", missing + "-n", missing + "-p", false, missing + "-n"},
-		{"env set beats prev", missing + "-n", tmp, true, missing + "-n"},
-		{"env set, native present", tmp, t.TempDir(), true, tmp},
+		{"fresh install -> native", false, false, "native"},
+		{"legacy install, env unset -> previous", false, true, "prev"},
+		{"env set beats legacy", true, true, "native"},
+		{"env set, fresh -> native", true, false, "native"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := pick(tc.native, tc.prev, tc.envSet); got != tc.want {
+			if got := pick("native", "prev", tc.envSet, tc.legacy); got != tc.want {
 				t.Fatalf("pick = %q, want %q", got, tc.want)
 			}
 		})
+	}
+	if got := pick("native", "", false, true); got != "native" {
+		t.Fatalf("empty previous = %q, want native", got)
 	}
 }
