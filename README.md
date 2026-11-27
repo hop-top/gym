@@ -35,10 +35,11 @@ go build -o gym ./cmd/gym
 ```bash
 gym version
 gym update
-gym learn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] <skill-or-url> [...]
-gym train [--dir FOLDER] [--recursive|-r [--depth N]] [--no-global] [pattern ...]
-gym unlearn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] [-n|--dry-run] [-y|--yes] [--force] [--ignore-missing] <name|pattern> [...]
-gym list [--global|-g | --dir FOLDER] [--effective] [--format json]
+gym learn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] [--no-lock] [--digest sha256:HEX] <skill[@version]|url[#ref]|dir> [...]
+gym learn [--global|-g | --dir FOLDER] [--frozen]   # no arguments: restore from the lock (--frozen: verify only)
+gym train [--dir FOLDER] [--recursive|-r [--depth N]] [--no-global] [--frozen] [pattern ...]
+gym unlearn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] [-n|--dry-run] [-y|--yes] [--force] [--ignore-missing] [--keep-lock] <name|pattern> [...]
+gym list [--global|-g | --dir FOLDER] [--effective | --check] [--format json]
 gym install ...  # alias of learn
 gym upgrade ...  # alias of train
 gym uninstall|remove|rm ...  # aliases of unlearn
@@ -96,13 +97,16 @@ Every install and upgrade runs an admission stage after the validator: a SHA-256
 - `gym digest <dir>` prints the digest; `--files` prints the listing.
 - `gym guard approve <skill|dir>` / `gym guard revoke <skill|dir>` record operator approval, bound to the exact digest.
 - `gym guard test <dir>` dry-runs admission and policies; `--max-data-class`, `--approval-state`, `--expect-digest` simulate operator state.
-- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`) in `config.yaml`; a project config can only tighten them. Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
+- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`), `admission.require_pin` (`none|remote|all`) in `config.yaml`; a project config can only tighten them. The digest pin comes from `--digest`, then the lock, then the registry entry. `require_pin: remote` makes registry and git sources need a pin (directories are exempt; archive sources come later). Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
 
   ```yaml
   admission:
     max_data_class: confidential   # default: internal
     require_manifest: warn         # default: warn
     require_approval: false        # default: false
+    require_pin: none              # default: none
+  lock:
+    frozen: false                  # a project may only turn it on
   ```
 
 Details: [docs/user.md](docs/user.md), [ADR-0002](docs/adr/0002-skill-manifest-admission.md).
@@ -139,14 +143,19 @@ Details: [docs/user.md](docs/user.md), [ADR-0003](docs/adr/0003-folder-scopes-lo
 ### Learn sources
 
 `gym learn` supports:
-- skill names from local merged registry index
-- direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories
+- skill names from local merged registry index; `name@version` pins an exact registry version (`pin-unavailable` if the index lacks it)
+- direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories; `url#ref` pins a branch, tag or 40/64-hex commit (`ref-not-found` if absent)
+- no arguments: restore every skill the scope's lock lists (see Lock)
 - default target is project-local install in `CWD/.gym/skills`; `--dir FOLDER` installs into another folder scope
 - use `--global` (or `-g`) for global install scope
 - if multiple install paths match the chosen scope, `gym learn` installs into all of them
 - use `--agent` patterns (or `--path`) to filter install targets
 
 Install gates on validator pass (`skills-ref validate {path}` by default), admission checks, and policy verdicts.
+
+### Lock
+
+`gym learn` records each install in `<root>/.gym/lock.json` (global: `<config-dir>/gym/lock.json`): source, requested pin, version, commit, content digest (`gym.lock/v1`, sorted, no timestamps). Commit it; `.gym/.gitignore` keeps `installed.json` and `skills/` out. `gym learn` with no arguments restores from it without reading the registry index; `gym learn --frozen` and `gym list --check` report `missing`, `digest-drift`, `modified` (exit 1) and `untracked` (warning); `gym train` skips pinned entries and rewrites the others; `gym unlearn` removes the entry (`--keep-lock` keeps it). `lock.frozen: true` (a project may turn it on, never off) refuses any change. A lock source that is absolute or leaves the folder is refused (`lock-source-escapes`). See [docs/user.md](docs/user.md#lock-and-pins).
 
 ### Train policy
 
@@ -160,6 +169,7 @@ Install gates on validator pass (`skills-ref validate {path}` by default), admis
 - If run outside a project with skills:
   - global skills only
 - `--dir FOLDER` trains that folder scope; `--recursive` also trains the scopes below it, each on its own (a failing scope does not stop the rest; exit 1 at the end)
+- skills whose lock entry was requested explicitly (`name@version`, `url#ref`) are skipped; `--frozen` fails with `lock-frozen` if anything would upgrade
 
 ### Global flags (kit/console/cli)
 
@@ -193,7 +203,7 @@ Known global standards are detected and surfaced in `gym paths` and `gym paths a
 ### Serving a registry
 
 `gym serve` runs a local HTTP server exposing:
-- `GET /skills.json` (spec-shaped `skills.json` manifest)
+- `GET /skills.json` (spec-shaped `skills.json` manifest: every version of each skill, with `digest` when the index has one)
 - `GET /_index.json` (full merged index, for debugging)
 - `GET /health`
 

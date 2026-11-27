@@ -130,7 +130,7 @@ Known gap: git checkout filters (`autocrlf`, `eol` attributes) can change bytes 
 | Detached file next to source (`<skill>.sha256`) | Same as source | Rejected: same origin as content, adds no trust |
 | None | Unpinned | Computed and recorded only |
 
-Precedence: lockfile > registry > none. Both present and different: lockfile wins, finding `digest-pin-conflict` (warn). Only the registry backend exists, so conflict handling arrives with the lockfile.
+Precedence: lockfile > registry > none. Both present and different: lockfile wins, finding `digest-pin-conflict` (warn). Conflict handling shipped with the lockfile (ADR-0003 section 2.4): a conflict needs lock and registry to describe the same version; an operator `--digest` outranks both.
 
 Outcomes, reported as `digest_status`:
 
@@ -371,7 +371,7 @@ Alternatives: always reject (rejected: excludes almost all existing skills; adop
 | 8 | `.git` ignored; `node_modules` included | unit | digest differs when node_modules changes |
 | 9 | Symlink in tree | unit | `digest-unsupported-entry` |
 | 10 | Pin matches / differs / absent | unit | match / `digest-mismatch` hard fail / unpinned warn |
-| 11 | Lockfile pin vs registry digest conflict | unit | lockfile wins, conflict warn (deferred with the lockfile) |
+| 11 | Lockfile pin vs registry digest conflict | unit | lockfile wins, conflict warn (closed by ADR-0003 test B6; B7: a newer registry version is no conflict) |
 | 12 | Local-dir source mutated between hash and copy | integration | re-hash fails, dest removed |
 | 13 | Frontmatter `Read Bash(git:*)`, manifest same | unit | allow |
 | 14 | Frontmatter token absent from manifest | unit | `tools-undeclared` deny |

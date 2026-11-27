@@ -151,8 +151,15 @@ gym update
 
 ```bash
 gym learn <skill-name>
+gym learn <skill-name>@<version>      # that exact registry version
 gym learn <git-url|file-url|dir>
+gym learn <git-url>#<branch|tag|commit>
+gym learn                             # restore every skill the lock lists
 ```
+
+A pin is part of the argument: `@` for registry names, `#` for git sources. `lint@1.2.0` installs exactly that version from the registry index, or fails with `pin-unavailable: lint@1.2.0 not in index (available: 1.3.0)`. `url#v1.2.0` clones that branch or tag; a full 40- or 64-hex commit is fetched directly. An unknown ref fails with `ref-not-found: <ref> at <url>`. Ranges (`^1.2`) do not exist. Directory sources have no version: pin them by digest (below).
+
+With a lock entry for the name, `gym learn lint` installs what the lock says (`using locked 1.2.0 (gym train to upgrade)`); see [Lock and pins](#lock-and-pins). `gym learn --digest sha256:<hex> <skill|url|dir>` pins one install to a digest without a lock. `--no-lock` installs without reading or writing the lock.
 
 Scope selection:
 - default: installs to project-local `CWD/.gym/skills`
@@ -179,6 +186,7 @@ gym unlearn lint --dir ../other-project
 - scope and targets as `learn`: project by default (`CWD/.gym`), `--global`/`-g`, or `--dir FOLDER` (not combinable with `-g`); the scope is exactly that folder, never an ancestor: a skill installed only at a parent is `skill-not-installed: ... (installed in: <parent>, global)`; `--path NAME_OR_PATH`, `--agent` patterns (prefix `!` excludes) pick the install paths to remove from
 - `-n/--dry-run` prints `would remove <skill> <dir>` lines and changes nothing
 - an explicit name never prompts; a pattern matching more than one skill asks `remove N skills from <root>? [y/N]` on a terminal, and without one fails with `confirmation-required: pattern matched N skills; pass --yes`. `-y/--yes` skips the prompt
+- the lock entry goes last: once no record of the skill remains in the scope, its entry is removed from that scope's lock (`<root>/.gym/lock.json`, or the global lock). `--keep-lock` leaves it, so the next `gym learn` restores the skill. A skill that is refused or fails to remove keeps its entry; with `--dry-run` nothing changes
 - per install directory, in order: the record's `install_path` must pass the state trust check (`install-path-untrusted: <path>`, the directory is never touched); the directory is re-hashed against the digest recorded at install, and a difference fails with `skill-modified: <dir> differs from recorded <digest>; --force to remove` (a record with no digest cannot be verified and needs `--force` too; a tree holding only directories, such as one left by an interrupted removal, has nothing to lose and skips the check); the directory is removed; then its record is dropped from `installed.json`, which stays even with an empty list
 - `--force` removes despite local modification; it never relaxes the trust check
 - a skill that is not installed fails with `skill-not-installed: <name> in <root>`, plus `(installed in: global)` when the other scope has it; `--ignore-missing` makes that exit 0
@@ -196,6 +204,8 @@ gym train --dir org -r        # that folder scope and every scope below it
 gym train --dir org -r --depth 3
 ```
 
+`gym train` leaves a skill alone when its lock entry was requested explicitly (`learn lint@1.2.0`, `learn url#v1`): `skip lint: pinned to 1.2.0 (gym learn lint@<new> to change)`. Other skills upgrade and their lock entry is rewritten (a skill the lock does not list stays unlisted). Directory and git installs are not in the registry and are skipped as before. `--frozen`, or `lock.frozen: true`, makes `train` change nothing: it exits 0 only if no upgrade is available, else `lock-frozen: train would modify <lock>`.
+
 `--recursive` (`-r`) walks below the scope root for folders holding `.gym/installed.json` (it skips `.git`, `node_modules` and `.gym`, and does not follow symlinks; `--depth` bounds the levels, default 8). Each scope is planned and upgraded on its own, in path order. A scope that fails is reported with its path and the others still run; the exit code is 1 if any failed.
 
 Train mirror policy:
@@ -203,6 +213,40 @@ Train mirror policy:
 - by default, also upgrades matching globally-installed skills
 - disable global mirror: `gym train --no-global`
 - compatibility aliases: `gym upgrade ...`
+
+### Lock and pins
+
+Every scope has a lock that records where each installed skill came from, so a clone can get the same bytes:
+
+| Scope | File |
+|-------|------|
+| project, folder | `<root>/.gym/lock.json` (commit it) |
+| global | `<config-dir>/gym/lock.json` |
+
+`gym learn` writes the entry after the skill is installed and the state saved; `gym train` rewrites upgraded entries; `gym unlearn` removes them. The lock is JSON, schema `gym.lock/v1`, with the skills sorted by name, no timestamps, so a diff shows only real changes. The first write of a project lock also writes `.gym/.gitignore` (`installed.json`, `skills/`) if there is none: the lock is committed, the installed tree and state are not. Per skill: `name`, `kind` (`registry`, `git` or `dir`), `source` (credential-free; a local directory inside the scope root is stored relative to it), `requested` (what you typed after `@` or `#`; absent means the entry tracks), `version`, `commit`, `path`, `registry`, `digest`. A local source outside the scope root is stored absolute with a `lock-source-not-portable` warning, and a project lock refuses to restore from it.
+
+```bash
+gym learn                 # install every locked skill that is missing, drifted or modified
+gym learn --frozen        # verify only: fail with lock-drift, change nothing
+gym list --check          # the same report as a table (or --format json)
+```
+
+`gym learn` with no arguments needs a lock (`lock-missing: <path> not found`). It installs from the lock's own source at the locked commit, expects the locked digest, and does not read the registry index, so it works offline from a mirror. One failing entry does not stop the others; the exit is 1 at the end. The lock is not rewritten.
+
+Drift, as `list --check` and `learn --frozen` report it:
+
+| Status | Meaning | Fails |
+|--------|---------|-------|
+| `missing` | in the lock, not installed | yes |
+| `digest-drift` | the digest recorded at install differs from the lock's | yes |
+| `modified` | installed files no longer hash to the recorded digest | yes |
+| `untracked` | installed, not in the lock | no (warning) |
+
+Exit 1 with `lock-drift: N of M locked skills differ from <lock>` on any failing status. `--frozen`, and config `lock.frozen: true`, never write the lock: `learn <name>` of a locked name is allowed, anything else fails `lock-frozen: learn <arg> would modify <lock>`, and `--no-lock` and `--digest` are refused. A project or folder config may turn `lock.frozen` on, never off.
+
+A lock in a cloned repository is repository content. A local source that is absolute, or that leaves the scope root (`..`, a symlink out), is refused before anything is read: `lock-source-escapes: <path>`. A corrupt lock is `lock-invalid: <path>: <why>` and stops `learn` and `train` before they change anything. The digest in the lock is checked like any pin: a source whose content changed is `digest-mismatch`, nothing is written.
+
+When a registry pins a different digest than the lock for the same version, the lock wins and the guard warns (`admission-digest-pin-conflict`); a registry that has only moved on to a newer version is not a conflict.
 
 ### CLI config (Viper)
 
@@ -254,10 +298,11 @@ gym list                      # nearest folder scope
 gym list --dir org/unit       # that folder scope
 gym list -g                   # global scope
 gym list --effective          # what an agent in this folder sees
+gym list --check              # drift against the lock (exit 1 on missing, digest-drift, modified)
 gym list --format json
 ```
 
-`gym list` shows one scope: the folder scope at `--dir`, else the nearest one at or above the current directory (`-g` for global). With `--effective` it shows the whole chain, the folder's own scope, its ancestors and the global scope; where several scopes hold the same name the nearest wins and the others are listed with `SHADOWED BY` (`shadowed_by` in JSON) naming the winner's folder or `global`. Columns: name, version, scope, folder, install path. JSON rows add `depth` (0 is the innermost folder; the global scope follows the last folder) and the source URL.
+`gym list` shows one scope: the folder scope at `--dir`, else the nearest one at or above the current directory (`-g` for global). With `--effective` it shows the whole chain, the folder's own scope, its ancestors and the global scope; where several scopes hold the same name the nearest wins and the others are listed with `SHADOWED BY` (`shadowed_by` in JSON) naming the winner's folder or `global`. `--check` compares the scope (`--dir`, `-g`, or the nearest folder) with its lock instead; see [Lock and pins](#lock-and-pins). Its JSON form is `{"scope", "lock", "ok", "findings": [{"name", "status", "detail"}]}`; `--check` and `--effective` exclude each other. Columns: name, version, scope, folder, install path. JSON rows add `depth` (0 is the innermost folder; the global scope follows the last folder) and the source URL.
 
 ### Warmup (Progressive Disclosure)
 
@@ -304,6 +349,8 @@ Serve your local merged index as a `skills.json` endpoint:
 gym serve --host 127.0.0.1 --port 4873
 ```
 
+`/skills.json` lists every version of every skill the index holds, each with its `digest` when the index has one, so a client can pin an older version with `name@version`.
+
 Endpoints:
 - `GET /skills.json`
 - `GET /_index.json` (debug)
@@ -340,7 +387,7 @@ Test a skill against all policies (dry-run): `gym guard test <skill-directory>` 
 
 After the validator passes, `gym learn` and `gym train` admit each skill:
 
-- **Digest**: sha256 over the skill's sorted file listing (`gym digest <dir>`; `--files` shows the listing). A registry entry may pin it with `"digest": "sha256:<hex>"`; a differing digest rejects the install. No pin: warning, digest recorded in installed state.
+- **Digest**: sha256 over the skill's sorted file listing (`gym digest <dir>`; `--files` shows the listing). The pin comes, in order, from `--digest` (operator), the lock entry, then the registry entry's `"digest": "sha256:<hex>"`; a differing digest rejects the install (`digest-mismatch`). No pin: warning, digest recorded in installed state. With the first install unpinned, `gym learn` once and commit the lock, or use `learn --digest`.
 - **Manifest** (optional `gym.json` at the skill root):
 
   ```json
@@ -351,14 +398,18 @@ After the validator passes, `gym learn` and `gym train` admit each skill:
 - **Data class ceiling**: `admission.max_data_class` (default `internal`) or `--max-data-class`. A skill above it is denied.
 - **Approval**: `gym guard approve <skill|dir>` records approval for the exact digest; any content change returns the skill to unreviewed. `gym guard revoke <skill|dir>` blocks a skill (all digests) or, with `--digest`, one digest. Records live in `<config-dir>/gym/approvals.json`.
 - **No manifest**: `admission.require_manifest` = `warn` (default), `off`, or `reject`.
+- **Pin required**: `admission.require_pin` = `none` (default), `remote`, or `all`. With `remote`, registry and git sources need a pin from the lock, the registry or `--digest`; directory sources are exempt. `all` also covers directories. An unpinned source is then denied (`admission-digest-required`, reason `digest-required`). A project or folder config can only raise it. Recommended for an isolated deployment: `remote`. (Archive sources arrive with a later change.)
 
-Config (`config.yaml`; a project config can only lower the ceiling, turn approval on, or raise the manifest requirement, relative to what defaults, system and user resolve to):
+Config (`config.yaml`; a project config can only lower the ceiling, turn approval on, raise the manifest or pin requirement, or turn `lock.frozen` on, relative to what defaults, system and user resolve to):
 
 ```yaml
 admission:
   max_data_class: confidential
   require_approval: false
   require_manifest: warn
+  require_pin: none
+lock:
+  frozen: false
 ```
 
 Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`. The command-line layers are operator-trusted, so `-c admission.max_data_class=confidential` may raise the ceiling over a project value. A legacy `config.json` is read for these keys like any other. An invalid value is a config error before any install.
