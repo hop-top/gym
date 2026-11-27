@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"hop.top/kit/go/console/progress"
+
 	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/fsutil"
 	"hop.top/gym/internal/ide"
@@ -28,6 +30,41 @@ type Request struct {
 	Config        config.Config
 	ProjectRoot   string
 	CWD           string
+
+	// Gate is an optional pre-flight policy hook invoked before any
+	// filesystem write. The cli layer wires this to publish
+	// gym.skill.install.requested on the bus and block on the guard's
+	// policy.guard.install.evaluated reply. Returning a
+	// non-nil error short-circuits the install with that error.
+	//
+	// Gate receives the resolved install path so policies that gate
+	// on path-allowlist see the real target. install.go calls Gate
+	// once per install path (so multi-path installs evaluate each).
+	Gate GateFunc
+}
+
+// GateFunc is the optional pre-install policy hook. paths is the list
+// of resolved install destinations (one per InstallSkillMulti
+// iteration; one for InstallSkill). scan carries the staging-dir scan
+// (postinstall, shell hook, secret scan, biggest binary) collected
+// before the gate runs so CEL policies that key on
+// payload.postinstall / payload.shell_hook / payload.scan /
+// payload.largest_binary_bytes can fire on real install metadata.
+// scan is the zero value for trivial source dirs. Returning a non-nil
+// error aborts the install with that error.
+type GateFunc func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan ScanResult) error
+
+// ScanResult captures what the install-pipeline scanner extracted from
+// the staging directory before publishing gym.skill.install.requested.
+// Empty fields mean "nothing found" — guard policies should treat them
+// as benign.
+type ScanResult struct {
+	Postinstall        string
+	ShellHook          string
+	Scan               string
+	LargestBinaryBytes int64
+	AllowPostinstall   bool
+	LargeBinary        bool
 }
 
 func defaultValidator(v config.ValidatorConfig) config.ValidatorConfig {
@@ -232,11 +269,31 @@ func stageSource(ctx context.Context, source string) (string, func(), error) {
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 
+	rep := progress.FromContext(ctx)
+	rep.Emit(ctx, progress.Event{
+		Phase: "clone",
+		Item:  source,
+		At:    time.Now().UTC(),
+	})
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", source, tmp)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		ok := false
+		rep.Emit(ctx, progress.Event{
+			Phase: "clone",
+			Item:  source,
+			OK:    &ok,
+			At:    time.Now().UTC(),
+		})
 		cleanup()
 		return "", nil, fmt.Errorf("git clone failed: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
+	ok := true
+	rep.Emit(ctx, progress.Event{
+		Phase: "clone",
+		Item:  source,
+		OK:    &ok,
+		At:    time.Now().UTC(),
+	})
 	return tmp, cleanup, nil
 }
 
@@ -284,6 +341,12 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	if len(installPaths) != 1 {
 		return state.InstalledSkill{}, fmt.Errorf("expected one install path, got %d", len(installPaths))
 	}
+	if req.Gate != nil {
+		scan := ScanStaging(skillPath)
+		if err := req.Gate(ctx, entry, req.Scope, []string{installPaths[0].Path}, scan); err != nil {
+			return state.InstalledSkill{}, err
+		}
+	}
 	return installSkillToPath(skillPath, entry, installPaths[0])
 }
 
@@ -327,6 +390,17 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	installPaths, err := resolveInstallPaths(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if req.Gate != nil {
+		paths := make([]string, len(installPaths))
+		for i, p := range installPaths {
+			paths[i] = p.Path
+		}
+		scan := ScanStaging(skillPath)
+		if err := req.Gate(ctx, entry, req.Scope, paths, scan); err != nil {
+			return nil, err
+		}
 	}
 
 	installed := make([]state.InstalledSkill, 0, len(installPaths))

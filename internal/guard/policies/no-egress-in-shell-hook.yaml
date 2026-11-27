@@ -1,0 +1,9 @@
+name: no-egress-in-shell-hook
+when: |
+  has(payload.shell_hook) && payload.shell_hook.matches(
+    '(?i)\\b(curl|wget|fetch|nc|ncat|netcat|http\\.get|requests\\.get|axios)\\b'
+  )
+effect: warn
+otherwise: allow
+severity: warn
+message: shell hook opens an outbound network connection
