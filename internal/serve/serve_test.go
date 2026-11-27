@@ -151,3 +151,45 @@ func TestHandlerDoesNotCreateFiles(t *testing.T) {
 		}
 	}
 }
+
+// B13: /skills.json lists every version of a skill and carries each digest.
+func TestB13SkillsJSONServesAllVersionsWithDigest(t *testing.T) {
+	dataHome := t.TempDir()
+	const da = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const db = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	writeIndex(t, dataHome, []registry.SkillEntry{
+		{Name: "lint", Version: "1.3.0", SourceURL: "https://h/l3.git", Digest: db},
+		{Name: "lint", Version: "1.2.0", SourceURL: "https://h/l2.git", Digest: da},
+		{Name: "fmt", Version: "0.1.0", SourceURL: "https://h/f.git"},
+	})
+	srv := httptest.NewServer(serve.Handler(serve.Options{DataHome: dataHome}))
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/skills.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var doc struct {
+		Skills []struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+			Digest  string `json:"digest"`
+		} `json:"skills"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range doc.Skills {
+		got[s.Name+"@"+s.Version] = s.Digest
+	}
+	want := map[string]string{"lint@1.3.0": db, "lint@1.2.0": da, "fmt@0.1.0": ""}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for k, v := range want {
+		if g, ok := got[k]; !ok || g != v {
+			t.Fatalf("%s: got %q (present %v), want %q", k, g, ok, v)
+		}
+	}
+}
