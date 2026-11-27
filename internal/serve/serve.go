@@ -29,6 +29,9 @@ type skill struct {
 	SourceURL   string `json:"source_url"`
 	Path        string `json:"path,omitempty"`
 	Description string `json:"description,omitempty"`
+	// Digest is the publisher pin (sha256:<hex>); every version of a skill
+	// is listed, each with its own.
+	Digest string `json:"digest,omitempty"`
 }
 
 func manifestFromIndex(name string, idx registry.Index) manifest {
@@ -44,6 +47,7 @@ func manifestFromIndex(name string, idx registry.Index) manifest {
 			SourceURL:   s.SourceURL,
 			Path:        s.Path,
 			Description: s.Description,
+			Digest:      s.Digest,
 		})
 	}
 	return out

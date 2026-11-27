@@ -163,11 +163,10 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 	}
 	result := Index{UpdatedAt: time.Now().UTC()}
 	report := Report{}
-	bestByName := map[string]SkillEntry{}
-	oldByName := map[string]SkillEntry{}
-	for _, s := range old.Skills {
-		oldByName[s.Name] = s
-	}
+	// Every (name, version) is kept so a pinned older version stays
+	// reachable; the best entry per name is what Find and upgrades use.
+	byVersion := map[string]SkillEntry{}
+	oldByName := bestByName(old.Skills)
 
 	total := int64(len(cfg.Repositories))
 	for i, src := range cfg.Repositories {
@@ -216,20 +215,31 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 			s.OriginURL = src.URL
 			s.Curated = curated
 
-			current, exists := bestByName[s.Name]
+			key := versionKey(s)
+			current, exists := byVersion[key]
 			if !exists || preferSkill(s, current) {
-				bestByName[s.Name] = s
+				byVersion[key] = s
 			}
 		}
 	}
 
-	for _, s := range bestByName {
+	for _, s := range byVersion {
 		result.Skills = append(result.Skills, s)
 	}
 	sort.Slice(result.Repositories, func(i, j int) bool { return result.Repositories[i].Name < result.Repositories[j].Name })
-	sort.Slice(result.Skills, func(i, j int) bool { return result.Skills[i].Name < result.Skills[j].Name })
+	// By name, then best first: Find returns the first entry of a name.
+	sort.Slice(result.Skills, func(i, j int) bool {
+		a, b := result.Skills[i], result.Skills[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if preferSkill(a, b) != preferSkill(b, a) {
+			return preferSkill(a, b)
+		}
+		return a.Version < b.Version
+	})
 
-	for _, s := range result.Skills {
+	for _, s := range bestByName(result.Skills) {
 		oldSkill, ok := oldByName[s.Name]
 		if !ok {
 			report.NewSkills = append(report.NewSkills, s)
@@ -243,6 +253,23 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 	sort.Slice(report.Upgrades, func(i, j int) bool { return report.Upgrades[i].Name < report.Upgrades[j].Name })
 
 	return result, report, nil
+}
+
+// versionKey identifies an entry by name and version, ignoring a leading v.
+func versionKey(s SkillEntry) string {
+	return s.Name + "\x00" + strings.TrimPrefix(strings.TrimSpace(s.Version), "v")
+}
+
+// bestByName reduces skills (any number of versions per name) to the best
+// entry of each name.
+func bestByName(skills []SkillEntry) map[string]SkillEntry {
+	out := map[string]SkillEntry{}
+	for _, s := range skills {
+		if cur, ok := out[s.Name]; !ok || preferSkill(s, cur) {
+			out[s.Name] = s
+		}
+	}
+	return out
 }
 
 func preferSkill(a, b SkillEntry) bool {
@@ -307,14 +334,44 @@ func ioReadAll(r io.Reader) ([]byte, error) {
 	return b, nil
 }
 
-// Find resolves a skill by exact name.
+// Find resolves a skill by exact name: the best entry among its versions
+// (curated first, then the highest version).
 func (idx Index) Find(name string) (SkillEntry, bool) {
+	best, found := SkillEntry{}, false
 	for _, s := range idx.Skills {
-		if s.Name == name {
-			return s, true
+		if s.Name == name && (!found || preferSkill(s, best)) {
+			best, found = s, true
 		}
 	}
-	return SkillEntry{}, false
+	return best, found
+}
+
+// FindVersion resolves name at exactly version (a leading v is ignored on
+// both sides). Among equal matches the best entry wins.
+func (idx Index) FindVersion(name, version string) (SkillEntry, bool) {
+	best, found := SkillEntry{}, false
+	for _, s := range idx.Skills {
+		if s.Name == name && compareVersions(s.Version, version) == 0 && (!found || preferSkill(s, best)) {
+			best, found = s, true
+		}
+	}
+	return best, found
+}
+
+// Versions lists the versions of name in the index, best first.
+func (idx Index) Versions(name string) []string {
+	var entries []SkillEntry
+	for _, s := range idx.Skills {
+		if s.Name == name {
+			entries = append(entries, s)
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return preferSkill(entries[i], entries[j]) })
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Version)
+	}
+	return out
 }
 
 // NewerThan returns true if a candidate skill entry is newer than version.
