@@ -67,7 +67,28 @@ make fmt
 - Per-scope reads go through `skillLayers` (`list.go`): records are checked with `trustedRecordsAt` against their own scope root; `resolveEffective` marks shadowed names. `warmup` keeps the winners only.
 - `train` (`train.go`): `trainScope` plans and runs one scope; `--recursive` finds scopes with `findScopeRoots` and runs `trainScope` per root, collecting failures. `upgrade.PlanItem.Root` is the scope root of a project item.
 - Guard policies: `LoadOptions.ProjectDirs` takes each chain root's `.gym/policies`, outermost first; the engine is built once per process from the command's start folder, so `train -r` evaluates the policies of that folder's chain.
-- Config keys that arrive later (network policy, frozen lock, pin requirement) join `foldAdmission` in `internal/config/chain.go`, each with its own clamp.
+- `network.mode` and `network.allow_hosts` fold in `loadChained` through `foldNetworkLayer`/`ClampNetwork` (`internal/config/network.go`): the mode only rises, a layer's list only intersects (`netpolicy.Intersect`); an open policy with no hosts listed takes the layer's list as is. `network` is read by the fold, not copied by `applyProjectLayer`, so it neither warns nor leaks past the clamp.
+
+## Network policy and egress
+
+One decision point: `netpolicy.Check(rawURL)` (`internal/netpolicy`). The current policy is process-wide (`netpolicy.Set` returns the restore function; tests that set it restore it), installed where `--offline` merges into config (`App.applyNetwork`, from `loadScopeAt`) and once in `PersistentPreRunE` (`initNetworkPolicy`) before the bus, judge and notifier start. `--offline` raises the mode to offline, never lowers it. `execCobra` restores the previous policy when a run ends. A config that cannot be read denies the network for the run.
+
+| Egress | Hook |
+|--------|------|
+| registry fetch (`update`, `serve` refresh) | `registry.Get`: check before the request and in `CheckRedirect`; auth header only for the exact repository host/port over https or loopback http, dropped on any redirect leaving it |
+| coach manifest fetch | `registry.Get` (no credential) |
+| archive URL | `install.download` through `registry.Get`; the listing repository's credential via `archiveAuthFor` (`OriginURL` equal to a configured repository URL), same host only |
+| git clone/fetch | `install.checkGitSource`: under a non-open policy the effective URL from `git ls-remote --get-url` (insteadOf applied) is checked before any network git command; every call goes through `gitCmd`: `-c protocol.allow=user -c protocol.https.allow=always -c protocol.ssh.allow=always -c protocol.file.allow=user -c protocol.ext.allow=never`, `GIT_TERMINAL_PROMPT=0` when stdin is not a terminal; no `--recurse-submodules` |
+| event bus network adapter (`--bus network`, `GYM_BUS_URL`) | `eventbus.New` checks the hub URL; a denial stops startup |
+| upgrade notifier (`kit/core/upgrade`) | skipped unless `netpolicy.Open()` |
+| `judge` (rsx subprocess) | `judge.WithNetworkGate`: skipped with a warning and a `judge-skipped` finding; a cached judgement is still served |
+| `git credential fill` | local helper, prompts disabled (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS=`); not an egress by itself |
+
+Kit installs its own offline guard under `http.DefaultTransport` (`netpolicy.Install`, called by `cli.New`) that acts on a context marked offline; kit stamps the marker in a `PersistentPreRunE` hook that gym's own `PersistentPreRunE` replaces, so `initNetworkPolicy` stamps it with `kitcli.WithOffline`. Kit's guard exempts loopback; gym's check does not.
+
+Auth lives in `internal/registry/auth_fetch.go` (`AuthError`, `Get`, `bearerToken`, `readTokenFile`, `credentialHeader`); the `token_file` mode and owner check is `tokenFileTrusted` (`auth_owner_unix.go`). Redaction helpers are `internal/redact` (`install.RedactURL` delegates). The cached registry index is the publisher's own document and keeps `source_url` verbatim.
+
+Archives: `internal/install/archive.go`. Limits `MaxArchiveEntries`/`MaxArchiveBytes`; a declared size over the budget is refused from the header (nothing written), the real byte count is enforced as well; `archiveRoot` takes the sole top-level directory only when it is the only entry.
 
 ## Registry Refresh
 
@@ -125,8 +146,11 @@ Flow of `learn <name>` with a lock entry: the entry becomes the install target (
 | `lock-source-escapes` | restore or `learn <name>` of a locked local source | yes |
 | `digest-required` | `admission.require_pin` (policy `admission-digest-required`) | yes |
 | `digest-pin-conflict` | warn finding `admission-digest-pin-conflict` | no (not a rejection) |
+| `network-denied` | `netpolicy.Check` at any egress (`*netpolicy.Error`); hard, not relaxed by `--insecure` | yes, when it happens during an install; `gym update` and bus startup just fail |
+| `archive-invalid` | `install.StageArchive` / `ExtractArchive` (`*install.ArchiveError`): `archive-invalid: <reason>` | no (command error) |
+| `source-credentials-in-url` | `CheckSourceURL` | yes |
 
-`admission.require_pin` (`none|remote|all`, default `none`) is clamped like `require_manifest`: `ClampRequirePin`, and a project or folder layer can only raise it. `remote` covers registry and git sources now (archive sources come with the sources work); the fact is `digest_status = unpinned-required`.
+`admission.require_pin` (`none|remote|all`, default `none`) is clamped like `require_manifest`: `ClampRequirePin`, and a project or folder layer can only raise it. `remote` covers registry, git and archive sources; the fact is `digest_status = unpinned-required`.
 
 ## Admission
 
@@ -203,7 +227,8 @@ Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `o
 | `digest_status` | string | `match` / `unpinned` / `unpinned-required` (`admission.require_pin` demands a pin; `mismatch` is a hard failure) |
 | `digest_source` | string | `operator` / `lockfile` / `registry` / `` |
 | `digest_pin_conflict` | bool | lock and registry pin different digests for the same version; the lock won |
-| `source_kind` | string | `registry` / `git` / `dir` |
+| `source_kind` | string | `registry` / `git` / `dir` / `archive` |
+| `source_host` | string | network host the source is fetched from (plan: the one host all items share); `` for a local source |
 | `requested` | string | what the operator pinned: the version after `@` or the ref after `#` |
 | `resolved` | string | git commit staged |
 | `lock_present` | bool | a lock entry was honoured as the pin |
@@ -258,7 +283,7 @@ gym imports kit packages for consistency with hop.top ecosystem. Key mappings:
 | TUI/REPL | `kit/console/tui` + `bubbletea/v2` | Matches tlc/aps look-and-feel |
 | Interactive prompts | `kit/console/wizard` | Used by `gym coach hire` only (no other command has a wizard) |
 | Progress reporting | `kit/console/progress` | Slow paths (learn/train/coach hire) emit phase updates |
-| Upgrade checking | `kit/core/upgrade` | Background banner respects `--offline` |
+| Upgrade checking | `kit/core/upgrade` | Banner runs only when `network.mode` is `open` (`PersistentPreRunE` in `cobra.go`) |
 | Event bus | `kit/runtime/bus` | Memory/SQLite/Network adapters; request/response with timeout |
 | Policy gates | `kit/runtime/policy/cel` | CEL evaluator for install/upgrade guards |
 | Tool specifications | `kit/ai/toolspec` | Self-spec at boot; skill specs merged at runtime |

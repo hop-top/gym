@@ -17,10 +17,13 @@ Coaches (registry sources):
 Learn:
 - by name: `gym learn <skill>`; exact version: `gym learn <skill>@<version>`
 - by URL/dir: `gym learn <git-url|file-url|dir>`; pinned ref: `gym learn <git-url>#<branch|tag|commit>`
+- archive: `gym learn <x.tar.gz|x.tgz|x.zip|file://...|https://...>` (no `#ref`; pin with `--digest`); `gym digest <dir|archive>`
+- network: `--offline`; config `network.mode: open|allowlist|offline`, `network.allow_hosts`; denial `network-denied: ...` (exit 1, no `--insecure` relief)
+- private registry: `repositories[].auth` `{type: bearer, token_env|token_file}` or `{type: git-credential}` in user config; index may be a `file://` URL or path
 - restore from the lock: `gym learn` (no arguments; needs `<root>/.gym/lock.json`); verify only: `gym learn --frozen`
 - operator pin: `gym learn --digest sha256:<hex> <skill|url|dir>`; skip the lock: `--no-lock`
 - a locked name installs the locked source, commit and digest (`using locked <v>`)
-- reasons: `pin-unavailable`, `ref-not-found`, `lock-missing`, `lock-invalid`, `lock-drift`, `lock-frozen`, `lock-source-escapes`, `digest-required`
+- reasons: `pin-unavailable`, `ref-not-found`, `lock-missing`, `lock-invalid`, `lock-drift`, `lock-frozen`, `lock-source-escapes`, `digest-required`, `network-denied`, `archive-invalid`, `source-credentials-in-url`
 - default scope: project install at `CWD/.gym/skills`
 - folder scope elsewhere: `gym learn --dir <folder> …` (not with `-g`)
 - force global: `gym learn --global …` or `gym learn -g …`
