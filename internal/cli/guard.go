@@ -19,6 +19,7 @@ import (
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/netpolicy"
 	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/scope"
 	"hop.top/gym/internal/upgrade"
@@ -75,6 +76,7 @@ func (a *App) installGate(requestID, folder string) install.GateFunc {
 			Skill:              entry.Name,
 			Version:            entry.Version,
 			SourceURL:          install.RedactURL(entry.SourceURL),
+			SourceHost:         sourceHostOf(entry.SourceURL),
 			Scope:              scope,
 			Folder:             folderOf(scope, folder),
 			Paths:              paths,
@@ -107,7 +109,7 @@ func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) erro
 			Source: install.RedactURL(p.Skill.SourceURL),
 		})
 	}
-	payload := events.SkillUpgradePlannedPayload{Items: items, Folder: planFolder(plan)}
+	payload := events.SkillUpgradePlannedPayload{Items: items, Folder: planFolder(plan), SourceHost: planSourceHost(plan)}
 	return guard.GateUpgrade(ctx, a.Bus(), payload, guard.GateConfig{
 		Logger: a.Logger(),
 	})
@@ -306,4 +308,28 @@ func planFolder(plan []upgrade.PlanItem) string {
 		}
 	}
 	return ""
+}
+
+// sourceHostOf is the network host a source is fetched from, "" for a
+// local source.
+func sourceHostOf(source string) string {
+	host, _, ok := netpolicy.HostOf(source)
+	if !ok {
+		return ""
+	}
+	return host
+}
+
+// planSourceHost is the one host every item of a plan comes from; empty
+// when the plan is local or mixes hosts.
+func planSourceHost(plan []upgrade.PlanItem) string {
+	host := ""
+	for i, p := range plan {
+		h := sourceHostOf(p.Skill.SourceURL)
+		if i > 0 && h != host {
+			return ""
+		}
+		host = h
+	}
+	return host
 }
