@@ -18,7 +18,7 @@ func TestDirFlagUsesThatRootsLock(t *testing.T) {
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "b")
 	scopeTree(t, a)
 	scopeTree(t, b)
-	srcOld := lkSkillSrc(t, scratchDir(t), "lint", "old")
+	srcOld := lkSkillSrc(t, filepath.Join(a, "old"), "lint", "old")
 	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: srcOld})
 
 	e.mustGym(t, "learn", "--dir", a, "lint")
@@ -38,7 +38,7 @@ func TestDirFlagUsesThatRootsLock(t *testing.T) {
 
 	e.index(t,
 		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: srcOld},
-		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "new")})
+		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, filepath.Join(a, "new"), "lint", "new")})
 	e.mustGym(t, "train", "--dir", a)
 	fa, _ = lock.Load(lock.ProjectPath(a), lock.ScopeProject)
 	if ent, _ := fa.Find("lint"); ent.Version != "1.1.0" {
@@ -59,19 +59,20 @@ func TestDirFlagUsesThatRootsLock(t *testing.T) {
 // train -r rewrites each scope's own lock.
 func TestTrainRecursiveRewritesEachScopesLock(t *testing.T) {
 	e := newLkEnv(t, "")
-	a, b := filepath.Join(e.proj, "a"), filepath.Join(e.proj, "b")
+	// The sources live inside a, which is inside e.proj: in-tree for both
+	// scopes, so both locks can hold them.
+	a := filepath.Join(e.proj, "a")
 	scopeTree(t, e.proj)
 	scopeTree(t, a)
-	scopeTree(t, b)
-	srcOld := lkSkillSrc(t, scratchDir(t), "lint", "old")
+	srcOld := lkSkillSrc(t, filepath.Join(a, "old"), "lint", "old")
 	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: srcOld})
 	e.mustGym(t, "learn", "--dir", a, "lint")
-	e.mustGym(t, "learn", "--dir", b, "lint")
+	e.mustGym(t, "learn", "--dir", e.proj, "lint")
 	e.index(t,
 		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: srcOld},
-		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "new")})
+		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, filepath.Join(a, "new"), "lint", "new")})
 	e.mustGym(t, "train", "-r")
-	for _, root := range []string{a, b} {
+	for _, root := range []string{e.proj, a} {
 		f, err := lock.Load(lock.ProjectPath(root), lock.ScopeProject)
 		if err != nil {
 			t.Fatal(err)

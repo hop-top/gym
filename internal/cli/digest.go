@@ -13,21 +13,32 @@ import (
 // registry maintainers and authors pin (see ADR-0002).
 func (a *App) digestCobra() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "digest <dir>",
-		Short: "Print the content digest of a skill directory",
+		Use:   "digest <dir|archive>",
+		Short: "Print the content digest of a skill directory or archive",
 		Long: "Print the sha256 content digest of a skill directory: the value a\n" +
-			"registry entry's digest field pins. --files also prints the sorted\n" +
-			"per-file listing the digest is computed over.",
+			"registry entry's digest field pins. An archive (.tar.gz, .tgz, .zip)\n" +
+			"is digested over its extracted tree, which equals the digest of the\n" +
+			"same tree as a directory. --files also prints the sorted per-file\n" +
+			"listing the digest is computed over.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := os.Stat(args[0])
 			if err != nil {
 				return err
 			}
+			root := args[0]
 			if !st.IsDir() {
-				return fmt.Errorf("%s is not a directory", args[0])
+				if !install.IsArchiveSource(args[0]) {
+					return fmt.Errorf("%s is not a directory or an archive", args[0])
+				}
+				staged, err := install.StageArchive(cmd.Context(), args[0], nil)
+				if err != nil {
+					return err
+				}
+				defer staged.Cleanup()
+				root = staged.Root
 			}
-			files, err := install.DigestListing(args[0])
+			files, err := install.DigestListing(root)
 			if err != nil {
 				return err
 			}

@@ -14,7 +14,8 @@ import (
 
 func TestLearnWritesLockForRegistrySkill(t *testing.T) {
 	e := newLkEnv(t, "")
-	src := lkSkillSrc(t, scratchDir(t), "lint", "a")
+	// In the project tree: a local source outside it is never locked.
+	src := lkSkillSrc(t, filepath.Join(e.proj, "src"), "lint", "a")
 	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.2.0", SourceURL: src, OriginURL: "https://r.example/skills.json"})
 	e.mustGym(t, "learn", "lint")
 
@@ -24,7 +25,7 @@ func TestLearnWritesLockForRegistrySkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Kind != lock.KindRegistry || got.Version != "1.2.0" || got.Requested != "" ||
-		got.Registry != "https://r.example/skills.json" || got.Digest != digest || got.Source != src {
+		got.Registry != "https://r.example/skills.json" || got.Digest != digest || got.Source != "src/lint" {
 		t.Fatalf("lock entry = %+v (want digest %s)", got, digest)
 	}
 	if b := lkRead(t, filepath.Join(e.proj, ".gym", ".gitignore")); b != "installed.json\nskills/\n" {
@@ -39,8 +40,8 @@ func TestLearnWritesLockForRegistrySkill(t *testing.T) {
 func TestLearnNameAtVersionRecordsRequested(t *testing.T) {
 	e := newLkEnv(t, "")
 	e.index(t,
-		registry.SkillEntry{Name: "lint", Version: "1.2.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "a")},
-		registry.SkillEntry{Name: "lint", Version: "1.3.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "b")},
+		registry.SkillEntry{Name: "lint", Version: "1.2.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "s1"), "lint", "a")},
+		registry.SkillEntry{Name: "lint", Version: "1.3.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "s2"), "lint", "b")},
 	)
 	e.mustGym(t, "learn", "lint@1.2.0")
 	if got := e.lockEntry(t, "lint"); got.Requested != "1.2.0" || got.Version != "1.2.0" {
@@ -67,7 +68,7 @@ func TestLearnLockIsSortedAndInTreeSourcesAreRelative(t *testing.T) {
 func TestLearnGitRefRecordsCommit(t *testing.T) {
 	lkRequireGit(t)
 	e := newLkEnv(t, "")
-	repo := filepath.Join(scratchDir(t), "up")
+	repo := filepath.Join(e.proj, "up")
 	c1 := lkGitRepo(t, repo, map[string]string{"SKILL.md": skillBody("first")})
 	lkGit(t, repo, "tag", "v1.0")
 	c2 := lkGitCommit(t, repo, map[string]string{"SKILL.md": skillBody("second")})
@@ -84,8 +85,8 @@ func TestLearnGitRefRecordsCommit(t *testing.T) {
 
 func TestLearnNoLockLeavesLockAlone(t *testing.T) {
 	e := newLkEnv(t, "")
-	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "a")},
-		registry.SkillEntry{Name: "fmt", Version: "1.0.0", SourceURL: lkSkillSrc(t, scratchDir(t), "fmt", "a")})
+	e.index(t, registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "s"), "lint", "a")},
+		registry.SkillEntry{Name: "fmt", Version: "1.0.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "s"), "fmt", "a")})
 	e.mustGym(t, "learn", "lint")
 	before := lkRead(t, e.lockPath())
 
@@ -143,8 +144,8 @@ func TestLearnGlobalWritesLockInConfigDir(t *testing.T) {
 // train rewrites a tracking entry and leaves a requested one alone.
 func TestTrainRewritesTrackingEntryAndSkipsPinned(t *testing.T) {
 	e := newLkEnv(t, "")
-	oldLint := lkSkillSrc(t, scratchDir(t), "lint", "old")
-	oldFmt := lkSkillSrc(t, scratchDir(t), "fmt", "old")
+	oldLint := lkSkillSrc(t, filepath.Join(e.proj, "old"), "lint", "old")
+	oldFmt := lkSkillSrc(t, filepath.Join(e.proj, "old"), "fmt", "old")
 	e.index(t,
 		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: oldLint},
 		registry.SkillEntry{Name: "fmt", Version: "1.0.0", SourceURL: oldFmt})
@@ -153,9 +154,9 @@ func TestTrainRewritesTrackingEntryAndSkipsPinned(t *testing.T) {
 
 	e.index(t,
 		registry.SkillEntry{Name: "lint", Version: "1.0.0", SourceURL: oldLint},
-		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "new")},
+		registry.SkillEntry{Name: "lint", Version: "1.1.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "new"), "lint", "new")},
 		registry.SkillEntry{Name: "fmt", Version: "1.0.0", SourceURL: oldFmt},
-		registry.SkillEntry{Name: "fmt", Version: "2.0.0", SourceURL: lkSkillSrc(t, scratchDir(t), "fmt", "new")})
+		registry.SkillEntry{Name: "fmt", Version: "2.0.0", SourceURL: lkSkillSrc(t, filepath.Join(e.proj, "new"), "fmt", "new")})
 	out := e.mustGym(t, "train")
 
 	if !strings.Contains(out, "skip fmt: pinned to 1.0.0 (gym learn fmt@<new> to change)") {
