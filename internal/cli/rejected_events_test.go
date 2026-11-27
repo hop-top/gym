@@ -140,8 +140,10 @@ func seedUpgrade(t *testing.T, src string) string {
 func TestTrain_ValidatorFailurePublishesRejected(t *testing.T) {
 	home := isolateInternal(t)
 	src := skillTree(t, "lint", "")
-	old := seedUpgrade(t, src)
+	// setValidator rewrites the user config, so it runs before the seed
+	// appends the install path its state record needs.
 	setValidator(t, home, "exit 1")
+	old := seedUpgrade(t, src)
 	ba := newBusApp(t, home, true)
 	if err := ba.train(t); err == nil {
 		t.Fatal("expected validator failure")

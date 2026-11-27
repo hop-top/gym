@@ -149,9 +149,14 @@ func resolveInstallPaths(req Request) ([]config.InstallPath, error) {
 			if root == "" {
 				root = req.CWD
 			}
+			dflt := filepath.Join(root, ".gym", "skills")
+			// A repository can make .gym/skills a symlink out of its tree.
+			if abs, err := filepath.Abs(root); err != nil || !config.ContainedIn(abs, dflt) {
+				return nil, fmt.Errorf("install path %s escapes project %s", dflt, root)
+			}
 			paths = append(paths, config.InstallPath{
 				Name:  "gym-project",
-				Path:  filepath.Join(root, ".gym", "skills"),
+				Path:  dflt,
 				Scope: "project",
 			})
 		}
@@ -442,6 +447,11 @@ func admitStaged(req Request, entry registry.SkillEntry, skillPath string) (Admi
 }
 
 func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath config.InstallPath, adm AdmissionResult) (state.InstalledSkill, error) {
+	// A registry-supplied name must not steer the copy or the RemoveAll
+	// out of the install path.
+	if !ValidSkillName(entry.Name) {
+		return state.InstalledSkill{}, fmt.Errorf("invalid skill name %q", entry.Name)
+	}
 	if err := os.MkdirAll(installPath.Path, 0o755); err != nil {
 		return state.InstalledSkill{}, err
 	}
