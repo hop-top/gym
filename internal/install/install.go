@@ -98,7 +98,7 @@ func ValidateSkillPackage(path string, v config.ValidatorConfig) error {
 	v = defaultValidator(v)
 	cmdLine := replacePathTokens(v.Command, path)
 	if len(cmdLine) == 0 {
-		return fmt.Errorf("validator command is empty")
+		return &ValidatorError{Err: errors.New("validator command is empty")}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(v.TimeoutSeconds)*time.Second)
 	defer cancel()
@@ -106,7 +106,7 @@ func ValidateSkillPackage(path string, v config.ValidatorConfig) error {
 	cmd := exec.CommandContext(ctx, cmdLine[0], cmdLine[1:]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("validation failed: %w\n%s", err, strings.TrimSpace(string(out)))
+		return &ValidatorError{Err: err, Output: strings.TrimSpace(string(out))}
 	}
 	return nil
 }
