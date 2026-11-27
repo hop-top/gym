@@ -29,6 +29,10 @@ var projectKeys = map[string]bool{
 
 const projectAdmissionKey = "admission"
 
+// projectNetworkKey is folded by foldNetworkLayer (tighten-only), like
+// admission, so applyProjectLayer neither copies nor warns about it.
+const projectNetworkKey = "network"
+
 // readProjectLayer parses the project layer alone into its top-level keys.
 // A missing or empty file yields no keys. JSON is valid YAML, so the legacy
 // config.json parses the same way.
@@ -89,7 +93,7 @@ func applyProjectLayer(cfg *Config, path, anchor string) ([]string, error) {
 
 	var warnings []string
 	for _, k := range names {
-		if k == projectAdmissionKey {
+		if k == projectAdmissionKey || k == projectNetworkKey {
 			continue
 		}
 		if !projectKeys[k] {
@@ -110,6 +114,12 @@ func applyProjectLayer(cfg *Config, path, anchor string) ([]string, error) {
 		case "repositories":
 			var repos []RepositoryConfig
 			if derr = decodeKey(keys[k], &repos); derr == nil {
+				for i := range repos {
+					if repos[i].Auth != nil {
+						warnings = append(warnings, fmt.Sprintf("config: ignoring auth of repository %q in project layer %s (user/system/-c only)", repos[i].Name, path))
+						repos[i].Auth = nil
+					}
+				}
 				cfg.Repositories = repos
 			}
 		case "curation":

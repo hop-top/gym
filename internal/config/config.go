@@ -25,6 +25,23 @@ type RepositoryConfig struct {
 	Name    string `json:"name" yaml:"name"`
 	URL     string `json:"url" yaml:"url"`
 	Curated bool   `json:"curated" yaml:"curated"`
+	// Auth is honoured from user, system and -c layers only; a project or
+	// folder layer's auth is dropped with a warning (see applyProjectLayer).
+	Auth *AuthConfig `json:"auth,omitempty" yaml:"auth,omitempty"`
+}
+
+// Repository auth types.
+const (
+	AuthBearer        = "bearer"
+	AuthGitCredential = "git-credential"
+)
+
+// AuthConfig says how to authenticate to a repository. It never holds a
+// secret: a bearer token is named by environment variable or file.
+type AuthConfig struct {
+	Type      string `json:"type" yaml:"type"`
+	TokenEnv  string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenFile string `json:"token_file,omitempty" yaml:"token_file,omitempty"`
 }
 
 // InstallPath defines where skills are installed.
@@ -64,6 +81,7 @@ type Config struct {
 	Upgrade      UpgradeConfig      `json:"upgrade" yaml:"upgrade"`
 	Admission    AdmissionConfig    `json:"admission" yaml:"admission"`
 	Lock         LockConfig         `json:"lock" yaml:"lock"`
+	Network      NetworkConfig      `json:"network" yaml:"network"`
 }
 
 func defaultConfig() Config {
@@ -81,6 +99,7 @@ func defaultConfig() Config {
 			MirrorGlobalFromProject: true,
 		},
 		Admission: DefaultAdmission(),
+		Network:   NetworkConfig{Mode: "open"},
 	}
 }
 
