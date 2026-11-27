@@ -1,0 +1,7 @@
+name: admission-digest-required
+when: |
+  has(payload.digest_status) && payload.digest_status == 'unpinned-required'
+effect: deny
+otherwise: allow
+severity: deny
+message: "admission.require_pin demands a digest pin (lock entry, registry digest, or --digest) for this source"

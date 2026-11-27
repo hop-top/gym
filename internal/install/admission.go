@@ -6,6 +6,7 @@ import (
 	"hop.top/gym/internal/approvals"
 	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/dataclass"
+	"hop.top/gym/internal/lock"
 	"hop.top/gym/internal/registry"
 )
 
@@ -13,6 +14,16 @@ import (
 const (
 	DigestMatch    = "match"
 	DigestUnpinned = "unpinned"
+	// DigestUnpinnedRequired: no pin, and admission.require_pin demands one
+	// for this source kind.
+	DigestUnpinnedRequired = "unpinned-required"
+)
+
+// Digest pin sources reported in AdmissionResult.DigestSource.
+const (
+	PinSourceRegistry = "registry"
+	PinSourceLockfile = "lockfile"
+	PinSourceOperator = "operator"
 )
 
 // ApprovalRequiredMissing is the approval_state fact emitted when
@@ -35,10 +46,22 @@ type AdmissionInput struct {
 	// ApprovalsPath overrides the user-level approvals file.
 	ApprovalsPath string
 
-	// ApprovalState and ExpectDigest simulate operator state
-	// (`gym guard test`). Empty means: use the real store / registry.
+	// ApprovalState simulates operator state (`gym guard test`). Empty
+	// means: use the real store.
 	ApprovalState string
-	ExpectDigest  string
+	// ExpectDigest is the operator's own pin (`learn --digest`,
+	// `guard test --expect-digest`). It outranks the lock and the registry.
+	ExpectDigest string
+
+	// Lock is the lock entry honoured by this install, nil when none applies.
+	Lock *lock.Entry
+	// SourceKind is registry|git|dir|archive; it decides whether
+	// admission.require_pin applies. Empty counts as dir.
+	SourceKind string
+	// Requested is what the operator pinned (version or ref); Commit the
+	// git commit staged. Both are facts for the policies.
+	Requested string
+	Commit    string
 }
 
 // AdmissionResult carries the facts the guard policies adjudicate.
@@ -47,8 +70,18 @@ type AdmissionResult struct {
 	ManifestMode    string // off|warn|reject
 
 	Digest       string
-	DigestStatus string // match|unpinned (mismatch is a hard error)
-	DigestSource string // registry|operator|""
+	DigestStatus string // match|unpinned|unpinned-required (mismatch is a hard error)
+	DigestSource string // registry|lockfile|operator|""
+	// DigestPinConflict: lock and registry pin different digests for the
+	// same version; the lock won.
+	DigestPinConflict bool
+
+	// SourceKind, Requested, Resolved (the commit) and LockPresent describe
+	// where the skill came from.
+	SourceKind  string
+	Requested   string
+	Resolved    string
+	LockPresent bool
 
 	DeclaredTools   []string
 	UndeclaredTools []string
@@ -62,13 +95,33 @@ type AdmissionResult struct {
 }
 
 // ExpectedDigest returns the pinned digest for entry and where the pin
-// came from. Only the registry backend exists today; a lockfile backend
-// slots in ahead of it (lockfile wins over registry).
-func ExpectedDigest(entry registry.SkillEntry) (digest, source string) {
-	if entry.Digest != "" {
-		return entry.Digest, "registry"
+// came from: the lock entry first, then the registry entry's digest
+// (source "lockfile" / "registry"); none gives "". The operator's own pin
+// outranks both and is applied by Admit.
+//
+// conflict is true only when lock and registry both pin, differ, and
+// describe the same version: a registry that has moved on to a newer
+// version is not a conflict. The lock wins either way.
+func ExpectedDigest(entry registry.SkillEntry, lk *lock.Entry) (digest, source string, conflict bool) {
+	if lk != nil && lk.Digest != "" {
+		conflict = entry.Digest != "" && entry.Digest != lk.Digest && lk.Version == entry.Version
+		return lk.Digest, PinSourceLockfile, conflict
 	}
-	return "", ""
+	if entry.Digest != "" {
+		return entry.Digest, PinSourceRegistry, false
+	}
+	return "", "", false
+}
+
+// pinRequired reports whether require_pin demands a pin for kind.
+func pinRequired(mode, kind string) bool {
+	switch mode {
+	case config.PinAll:
+		return true
+	case config.PinRemote:
+		return kind == lock.KindRegistry || kind == lock.KindGit || kind == lock.KindArchive
+	}
+	return false
 }
 
 // Admit computes admission facts for the staged skill at in.SkillPath.
@@ -97,13 +150,20 @@ func Admit(in AdmissionInput) (AdmissionResult, error) {
 	}
 	res.Digest = digest
 
-	expected, source := ExpectedDigest(in.Entry)
+	expected, source, conflict := ExpectedDigest(in.Entry, in.Lock)
 	if in.ExpectDigest != "" {
-		expected, source = in.ExpectDigest, "operator"
+		// The operator's pin decides; the lock/registry disagreement is moot.
+		expected, source, conflict = in.ExpectDigest, PinSourceOperator, false
 	}
+	res.DigestPinConflict = conflict
+	res.SourceKind, res.Requested, res.Resolved = in.SourceKind, in.Requested, in.Commit
+	res.LockPresent = in.Lock != nil
 	switch {
 	case expected == "":
 		res.DigestStatus = DigestUnpinned
+		if pinRequired(in.Admission.RequirePin, in.SourceKind) {
+			res.DigestStatus = DigestUnpinnedRequired
+		}
 	case expected == digest:
 		res.DigestStatus, res.DigestSource = DigestMatch, source
 	default:

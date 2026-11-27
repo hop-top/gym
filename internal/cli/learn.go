@@ -96,6 +96,8 @@ func (a *App) runLearnOpts(ctx context.Context, o learnOpts) error {
 			CWD:           a.CWD,
 			Gate:          a.installGate(reqID, projectRoot),
 			Outcome:       &outcome,
+			Kind:          target.Kind,
+			Requested:     target.Requested,
 		})
 		if err != nil {
 			emitFail(ctx, "install", tok)

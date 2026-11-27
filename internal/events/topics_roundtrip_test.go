@@ -150,6 +150,24 @@ func TestPayloadsRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "SkillInstallRequestedSource",
+			payload: events.SkillInstallRequestedPayload{
+				Skill: "lint", Version: "1.2.0", SourceURL: "https://x.test/lint.git", Scope: "project",
+				Digest:       "sha256:" + strings.Repeat("b", 64),
+				DigestStatus: "match", DigestSource: "lockfile",
+				SourceKind: "git", Requested: "v1.2.0", Resolved: strings.Repeat("c", 40),
+				LockPresent: true, DigestPinConflict: true, RequestID: "01HZ-req-3c",
+			},
+		},
+		{
+			name: "SkillUpgradePlannedSource",
+			payload: events.SkillUpgradePlannedPayload{
+				Items:      []events.UpgradePlanItem{{Skill: "lint", Scope: "project", From: "1.0.0"}},
+				SourceKind: "registry", Requested: "1.0.0", Resolved: strings.Repeat("d", 40),
+				LockPresent: true, DigestPinConflict: true, RequestID: "01HZ-req-5b",
+			},
+		},
+		{
 			name: "SkillUpgradePlannedFolder",
 			payload: events.SkillUpgradePlannedPayload{
 				Items:     []events.UpgradePlanItem{{Skill: "lint", Scope: "project", From: "1.0.0"}},
@@ -327,6 +345,7 @@ func TestSkillInstallRequestedPayload_AdmissionFieldNames(t *testing.T) {
 		DigestSource: "registry", DeclaredTools: []string{"Read"}, UndeclaredTools: []string{"Write"},
 		DataClass: "internal", MaxDataClass: "internal", DataClassOver: true,
 		DataClassEscalated: true, ApprovalState: "approved",
+		SourceKind: "git", Requested: "v1", Resolved: "c", LockPresent: true, DigestPinConflict: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -339,6 +358,7 @@ func TestSkillInstallRequestedPayload_AdmissionFieldNames(t *testing.T) {
 		"manifest_present", "manifest_mode", "digest", "digest_status", "digest_source",
 		"declared_tools", "undeclared_tools", "data_class", "max_data_class",
 		"data_class_over", "data_class_escalated", "approval_state",
+		"source_kind", "requested", "resolved", "lock_present", "digest_pin_conflict",
 	} {
 		if _, ok := m[k]; !ok {
 			t.Errorf("payload JSON lacks %q", k)

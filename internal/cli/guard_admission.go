@@ -15,6 +15,7 @@ import (
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/lock"
 	"hop.top/gym/internal/registry"
 )
 
@@ -77,6 +78,7 @@ func (a *App) evaluateSkillDir(dir string, opts skillDirOptions) (skillDirResult
 		SkillPath:     abs,
 		Entry:         entry,
 		Admission:     cfg.Admission,
+		SourceKind:    lock.KindDir,
 		ApprovalState: opts.ApprovalState,
 		ExpectDigest:  opts.ExpectDigest,
 	})
