@@ -155,6 +155,7 @@ You can provide CLI defaults via Viper:
 - `.gym/cli.yaml` in current working directory
 - `$XDG_CONFIG_HOME/gym/cli.yaml`
 
+The project file arrives with a clone, so it can only narrow a run: it may set `learn.agents`, `train.no_global: true` and `strict: true`. Every other key (`learn.global`, `learn.path`, `insecure`, `gate-timeout`, `bus`, `max-data-class`, `refresh-judgement`, anything else) is ignored with `cli: ignoring project key "<key>" (user config or flags only)`. To pick an in-tree install path from a project, use `install_paths` in `.gym/config.yaml`. The user file is unrestricted and wins over the project file; command-line flags win over both.
 Example:
 
 ```yaml
