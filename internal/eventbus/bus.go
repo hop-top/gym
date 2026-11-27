@@ -10,6 +10,8 @@ import (
 
 	"hop.top/kit/go/core/xdg"
 	"hop.top/kit/go/runtime/bus"
+
+	"hop.top/gym/internal/netpolicy"
 )
 
 // Adapter selects the underlying transport.
@@ -102,6 +104,10 @@ func New(cfg Config) (*Bus, error) {
 	case AdapterNetwork:
 		if resolved.NetworkURL == "" {
 			return nil, errors.New("eventbus: network adapter requires GYM_BUS_URL")
+		}
+		// The adapter dials a remote hub: an egress like any other.
+		if err := netpolicy.Check(resolved.NetworkURL); err != nil {
+			return nil, err
 		}
 		// Allow-list: gym.* + curated peers gym subscribes to.
 		filter := bus.TopicFilter{

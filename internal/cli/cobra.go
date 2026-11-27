@@ -18,6 +18,7 @@ import (
 	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/judge"
+	"hop.top/gym/internal/netpolicy"
 	"hop.top/gym/internal/project"
 )
 
@@ -38,6 +39,8 @@ func (a *App) execCobra(args []string) error {
 	if len(args) == 1 && (args[0] == "-v" || args[0] == "--version") {
 		args = []string{"version"}
 	}
+	// A run's network policy is not left behind for the next in-process run.
+	defer netpolicy.Set(netpolicy.Current())()
 	root := a.newKitRoot()
 	root.SetArgs(args)
 	root.Cmd.SetOut(a.Stdout)
@@ -103,6 +106,9 @@ func (a *App) newKitRoot() *kitcli.Root {
 			return err
 		}
 		a.cfgPaths, a.cfgOverrides = paths, overrides
+		// The network policy comes first: the bus, judge and notifier
+		// below are egresses.
+		a.initNetworkPolicy(c)
 		// Bind every gym persistent flag (--strict, --insecure,
 		// --gate-timeout, ...) to the per-command viper and to the
 		// global one, which kit/cli and guard.GateConfig read. Keys
@@ -150,6 +156,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 			_ = cheat.MaybeStartBridge(a.bus, a.cheatRegistryHandle)
 			// Start the rsx-backed coach judging subscriber.
 			a.judge = judge.New(a.bus, a.Logger(),
+				judge.WithNetworkGate(judgeNetworkGate),
 				judge.WithRefreshFunc(func() bool {
 					v, _ := c.Root().PersistentFlags().GetBool("refresh-judgement")
 					return v
@@ -169,8 +176,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 				a.guardSub = g
 			}
 		}
-		offline, _ := c.Flags().GetBool("offline")
-		if !offline && c.Name() != "version" && c.Name() != "update" {
+		if netpolicy.Open() && c.Name() != "version" && c.Name() != "update" {
 			notifyUpgrade(c.Context(), newKitChecker(resolveVersion()), a.Stderr)
 		}
 		return nil

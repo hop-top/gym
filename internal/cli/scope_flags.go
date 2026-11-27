@@ -97,6 +97,7 @@ func (a *App) loadScopeAt(start string, exact bool) (runtime, error) {
 		a.Logger().Warn(w)
 	}
 	a.applyAdmissionFlags(&cfg)
+	a.applyNetwork(&cfg)
 	return runtime{Dirs: dirs, Config: cfg, ProjectRoot: root, InProject: inProject, Chain: res.Roots}, nil
 }
 
