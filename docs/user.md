@@ -257,6 +257,37 @@ List installed policies: `gym guard list`.
 
 Test a skill against all policies (dry-run): `gym guard test <skill-directory>` or `gym guard test manifest.json` (exit 0 = all allow, exit 1 = deny/warn).
 
+### Skill admission
+
+After the validator passes, `gym learn` and `gym train` admit each skill:
+
+- **Digest**: sha256 over the skill's sorted file listing (`gym digest <dir>`; `--files` shows the listing). A registry entry may pin it with `"digest": "sha256:<hex>"`; a differing digest rejects the install. No pin: warning, digest recorded in installed state.
+- **Manifest** (optional `gym.json` at the skill root):
+
+  ```json
+  {"schema": "gym.skill/v1", "allowed_tools": ["Read", "Bash(git:*)"], "data_class": "internal"}
+  ```
+
+  `data_class` is one of `public < internal < confidential < personal < special_category`. `allowed_tools` must cover every token in SKILL.md `allowed-tools`. Unknown fields, and the operator-only fields `digest` and `approval_state`, are rejected. This checks consistency; it cannot observe what a skill does at runtime.
+- **Data class ceiling**: `admission.max_data_class` (default `internal`) or `--max-data-class`. A skill above it is denied.
+- **Approval**: `gym guard approve <skill|dir>` records approval for the exact digest; any content change returns the skill to unreviewed. `gym guard revoke <skill|dir>` blocks a skill (all digests) or, with `--digest`, one digest. Records live in `<config-dir>/gym/approvals.json`.
+- **No manifest**: `admission.require_manifest` = `warn` (default), `off`, or `reject`.
+
+Config (`config.yaml`; a project config can only lower the ceiling, turn approval on, or raise the manifest requirement, relative to what defaults, system and user resolve to):
+
+```yaml
+admission:
+  max_data_class: confidential
+  require_approval: false
+  require_manifest: warn
+```
+
+Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`. The command-line layers are operator-trusted, so `-c admission.max_data_class=confidential` may raise the ceiling over a project value. A legacy `config.json` is read for these keys like any other. An invalid value is a config error before any install.
+
+Hard failures (`manifest-invalid`, `digest-mismatch`, `digest-unsupported-entry`, `approval-revoked`) are not relaxed by `--insecure` and do not depend on the event bus. The rest are policies (`gym guard list`): `--insecure` lowers denies to warnings, `--strict` turns warnings into denies. Every rejection exits 1.
+
+Dry-run: `gym guard test <skill-dir>` prints verdict, findings, and the computed facts; `--max-data-class`, `--approval-state unreviewed|approved|revoked`, and `--expect-digest sha256:<hex>` simulate operator state. `gym guard test payload.json` still evaluates a raw payload.
+
 ### Opting out of gates
 
 Coaches and skills pass through gates by default. To run outside the safety checks:

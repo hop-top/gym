@@ -1,0 +1,7 @@
+name: admission-data-class
+when: |
+  has(payload.data_class_over) && payload.data_class_over == true
+effect: deny
+otherwise: allow
+severity: deny
+message: "skill data_class is above the configured max_data_class ceiling"

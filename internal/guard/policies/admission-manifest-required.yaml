@@ -1,0 +1,8 @@
+name: admission-manifest-required
+when: |
+  has(payload.manifest_present) && payload.manifest_present == false &&
+  has(payload.manifest_mode) && payload.manifest_mode == 'reject'
+effect: deny
+otherwise: allow
+severity: deny
+message: "skill has no gym.json manifest and admission.require_manifest is reject"

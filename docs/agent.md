@@ -90,7 +90,7 @@ Event topics (gym.* outbound):
 - `gym.coach.judgement.completed` — rsx verdict (score, verdict, findings).
 - `gym.skill.install.requested` — install initiated (sync gate, awaits guard verdict).
 - `gym.skill.install.completed` — skill installed successfully.
-- `gym.skill.install.rejected` — install rejected by policy or precondition.
+- `gym.skill.install.rejected` — install rejected by admission (hard check or admission-* policy deny); carries `reason` and the `request_id` of the attempt.
 - `gym.skill.upgrade.planned` — upgrade plan available for veto.
 - `gym.skill.upgrade.applied` — skill upgraded successfully.
 - `gym.skill.upgrade.failed` — upgrade errored.

@@ -10,9 +10,9 @@ import (
 	"hop.top/gym/internal/cli"
 )
 
-// isolate points HOME and every XDG dir at fresh temp dirs and returns
+// isolateCfg points HOME and every XDG dir at fresh temp dirs and returns
 // (home, cwd). The user config dir is <home>/cfg/gym.
-func isolate(t *testing.T) (string, string) {
+func isolateCfg(t *testing.T) (string, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -23,7 +23,7 @@ func isolate(t *testing.T) (string, string) {
 	return home, t.TempDir()
 }
 
-func runGym(t *testing.T, cwd string, args ...string) (string, string, int) {
+func runGymCfg(t *testing.T, cwd string, args ...string) (string, string, int) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	app := cli.NewApp(&out, &errb, cwd)
@@ -42,8 +42,8 @@ func write(t *testing.T, path, body string) {
 }
 
 func TestConfigFlag_KeyValueOverrideEndToEnd(t *testing.T) {
-	_, cwd := isolate(t)
-	out, errs, code := runGym(t, cwd,
+	_, cwd := isolateCfg(t)
+	out, errs, code := runGymCfg(t, cwd,
 		"-c", "install_paths=[{name: viaflag, path: /opt/skills, scope: global}]", "paths")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
@@ -54,14 +54,14 @@ func TestConfigFlag_KeyValueOverrideEndToEnd(t *testing.T) {
 }
 
 func TestConfigFlag_ExtraFileLayersAfterDiscovered(t *testing.T) {
-	home, cwd := isolate(t)
+	home, cwd := isolateCfg(t)
 	write(t, filepath.Join(home, "cfg", "gym", "config.yaml"),
 		"install_paths:\n  - {name: fromuser, path: /u, scope: global}\n")
 	write(t, filepath.Join(cwd, ".gym", "config.yaml"),
 		"install_paths:\n  - {name: fromproject, path: /p, scope: global}\n")
 
 	// Discovered only: project wins over user.
-	out, errs, code := runGym(t, cwd, "paths")
+	out, errs, code := runGymCfg(t, cwd, "paths")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
@@ -72,7 +72,7 @@ func TestConfigFlag_ExtraFileLayersAfterDiscovered(t *testing.T) {
 	// -c <file> layers after both discovered files.
 	extra := filepath.Join(t.TempDir(), "extra.yaml")
 	write(t, extra, "install_paths:\n  - {name: fromextra, path: /e, scope: global}\n")
-	out, errs, code = runGym(t, cwd, "-c", extra, "paths")
+	out, errs, code = runGymCfg(t, cwd, "-c", extra, "paths")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
@@ -81,7 +81,7 @@ func TestConfigFlag_ExtraFileLayersAfterDiscovered(t *testing.T) {
 	}
 
 	// -c key=value beats the -c file.
-	out, errs, code = runGym(t, cwd, "-c", extra,
+	out, errs, code = runGymCfg(t, cwd, "-c", extra,
 		"-c", "install_paths=[{name: fromoverride, path: /o, scope: global}]", "paths")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
@@ -92,8 +92,8 @@ func TestConfigFlag_ExtraFileLayersAfterDiscovered(t *testing.T) {
 }
 
 func TestConfigFlag_MissingFileFails(t *testing.T) {
-	_, cwd := isolate(t)
-	_, _, code := runGym(t, cwd, "-c", filepath.Join(cwd, "absent.yaml"), "paths")
+	_, cwd := isolateCfg(t)
+	_, _, code := runGymCfg(t, cwd, "-c", filepath.Join(cwd, "absent.yaml"), "paths")
 	if code == 0 {
 		t.Fatal("want non-zero exit for missing -c file")
 	}
@@ -102,8 +102,8 @@ func TestConfigFlag_MissingFileFails(t *testing.T) {
 // kit hides its plumbing flags (-c/--config among them) from the default
 // --help and reveals them under --help-all.
 func TestConfigFlag_HelpAllShowsKitFlagOnce(t *testing.T) {
-	_, cwd := isolate(t)
-	out, _, code := runGym(t, cwd, "--help-all")
+	_, cwd := isolateCfg(t)
+	out, _, code := runGymCfg(t, cwd, "--help-all")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}

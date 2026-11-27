@@ -22,7 +22,7 @@ func TestPaths_PreviousLayoutStillRead(t *testing.T) {
 	write(t, filepath.Join(cwd, ".gym", "config.json"),
 		`{"install_paths":[{"name":"fromproject","path":"/p","scope":"global"}]}`)
 
-	out, errs, code := runGym(t, cwd, "paths")
+	out, errs, code := runGymCfg(t, cwd, "paths")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}

@@ -110,6 +110,9 @@ type SkillEntry struct {
 	Repository  string `json:"repository,omitempty"`
 	OriginURL   string `json:"origin_url,omitempty"`
 	Curated     bool   `json:"curated"`
+	// Digest is the optional publisher-pinned content digest
+	// (sha256:<hex>, see internal/install.Digest). Empty means unpinned.
+	Digest string `json:"digest,omitempty"`
 }
 
 // skillsDoc is the canonical on-repository skills.json shape.

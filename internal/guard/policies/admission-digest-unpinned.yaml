@@ -1,0 +1,7 @@
+name: admission-digest-unpinned
+when: |
+  has(payload.digest_status) && payload.digest_status == 'unpinned'
+effect: warn
+otherwise: allow
+severity: warn
+message: "no digest pin for this skill; computed digest is recorded but not verified"

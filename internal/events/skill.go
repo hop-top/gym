@@ -22,6 +22,12 @@ const (
 // staging-dir scan results that the CEL guard activates on: the install pipeline
 // scans the cloned/staged manifest before publishing and forwards the
 // fields here. Subscribers tolerate them being empty (zero values).
+//
+// The admission fields (ManifestPresent .. ApprovalState) carry the
+// facts computed by the install admission stage: manifest presence and
+// requirement mode, content digest and pin status, declared vs
+// undeclared tools, data class vs the operator ceiling, and approval
+// state. Ranks stay in Go; the policies see computed booleans.
 type SkillInstallRequestedPayload struct {
 	Skill              string   `json:"skill"`
 	Version            string   `json:"version,omitempty"`
@@ -34,6 +40,18 @@ type SkillInstallRequestedPayload struct {
 	LargestBinaryBytes int64    `json:"largest_binary_bytes,omitempty"`
 	AllowPostinstall   bool     `json:"allow_postinstall,omitempty"`
 	LargeBinary        bool     `json:"large_binary,omitempty"`
+	ManifestPresent    bool     `json:"manifest_present,omitempty"`
+	ManifestMode       string   `json:"manifest_mode,omitempty"`
+	Digest             string   `json:"digest,omitempty"`
+	DigestStatus       string   `json:"digest_status,omitempty"`
+	DigestSource       string   `json:"digest_source,omitempty"`
+	DeclaredTools      []string `json:"declared_tools,omitempty"`
+	UndeclaredTools    []string `json:"undeclared_tools,omitempty"`
+	DataClass          string   `json:"data_class,omitempty"`
+	MaxDataClass       string   `json:"max_data_class,omitempty"`
+	DataClassOver      bool     `json:"data_class_over,omitempty"`
+	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
+	ApprovalState      string   `json:"approval_state,omitempty"`
 	RequestID          string   `json:"request_id"`
 }
 
@@ -46,8 +64,11 @@ type SkillInstallCompletedPayload struct {
 	RequestID   string `json:"request_id,omitempty"`
 }
 
-// SkillInstallRejectedPayload is published after an install is
-// rejected by a policy guard or precondition.
+// SkillInstallRejectedPayload is published once per install rejected by
+// admission: a hard integrity failure (manifest-invalid, digest-mismatch,
+// digest-unsupported-entry, approval-revoked) or an admission-* policy
+// deny. Reason is the stable rejection reason; RequestID matches the
+// gym.skill.install.requested event of the same attempt.
 type SkillInstallRejectedPayload struct {
 	Skill     string `json:"skill"`
 	Scope     string `json:"scope"`
@@ -85,6 +106,18 @@ type SkillUpgradePlannedPayload struct {
 	LargestBinaryBytes int64             `json:"largest_binary_bytes,omitempty"`
 	AllowPostinstall   bool              `json:"allow_postinstall,omitempty"`
 	LargeBinary        bool              `json:"large_binary,omitempty"`
+	ManifestPresent    bool              `json:"manifest_present,omitempty"`
+	ManifestMode       string            `json:"manifest_mode,omitempty"`
+	Digest             string            `json:"digest,omitempty"`
+	DigestStatus       string            `json:"digest_status,omitempty"`
+	DigestSource       string            `json:"digest_source,omitempty"`
+	DeclaredTools      []string          `json:"declared_tools,omitempty"`
+	UndeclaredTools    []string          `json:"undeclared_tools,omitempty"`
+	DataClass          string            `json:"data_class,omitempty"`
+	MaxDataClass       string            `json:"max_data_class,omitempty"`
+	DataClassOver      bool              `json:"data_class_over,omitempty"`
+	DataClassEscalated bool              `json:"data_class_escalated,omitempty"`
+	ApprovalState      string            `json:"approval_state,omitempty"`
 	RequestID          string            `json:"request_id"`
 }
 

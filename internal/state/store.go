@@ -19,6 +19,10 @@ type InstalledSkill struct {
 	Repository  string    `json:"repository,omitempty"`
 	InstalledAt time.Time `json:"installed_at"`
 	InstallPath string    `json:"install_path"`
+	// Digest and DataClass record what admission saw at install time;
+	// DataClass lets an upgrade flag escalation.
+	Digest    string `json:"digest,omitempty"`
+	DataClass string `json:"data_class,omitempty"`
 }
 
 type globalStore struct {

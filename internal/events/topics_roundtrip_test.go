@@ -3,6 +3,7 @@ package events_test
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"hop.top/kit/go/runtime/bus"
@@ -122,6 +123,30 @@ func TestPayloadsRoundTrip(t *testing.T) {
 				Skill: "lint", Version: "1.2.3", SourceURL: "https://x.test/lint",
 				Scope: "project", Paths: []string{"~/.gym"},
 				RequestID: "01HZ-req-3",
+			},
+		},
+		{
+			name: "SkillInstallRequestedAdmission",
+			payload: events.SkillInstallRequestedPayload{
+				Skill: "lint", Version: "1.2.3", SourceURL: "https://x.test/lint", Scope: "project",
+				ManifestPresent: true, ManifestMode: "warn",
+				Digest:       "sha256:" + strings.Repeat("a", 64),
+				DigestStatus: "match", DigestSource: "registry",
+				DeclaredTools: []string{"Bash(git:*)", "Read"}, UndeclaredTools: []string{"Write"},
+				DataClass: "personal", MaxDataClass: "internal",
+				DataClassOver: true, DataClassEscalated: true,
+				ApprovalState: "unreviewed", RequestID: "01HZ-req-3b",
+			},
+		},
+		{
+			name: "SkillUpgradePlannedAdmission",
+			payload: events.SkillUpgradePlannedPayload{
+				Items:           []events.UpgradePlanItem{{Skill: "lint", Scope: "global"}},
+				ManifestPresent: true, ManifestMode: "reject",
+				Digest:       "sha256:" + strings.Repeat("b", 64),
+				DigestStatus: "unpinned", DeclaredTools: []string{"Read"},
+				DataClass: "public", MaxDataClass: "internal", ApprovalState: "approved",
+				RequestID: "01HZ-req-5b",
 			},
 		},
 		{
@@ -251,5 +276,31 @@ func TestPayloadsRoundTrip(t *testing.T) {
 				t.Errorf("re-marshal-hop mismatch:\n got: %#v\nwant: %#v", got2, tc.payload)
 			}
 		})
+	}
+}
+
+// Case 32: the admission fields keep their documented JSON names.
+func TestSkillInstallRequestedPayload_AdmissionFieldNames(t *testing.T) {
+	raw, err := json.Marshal(events.SkillInstallRequestedPayload{
+		ManifestPresent: true, ManifestMode: "warn", Digest: "d", DigestStatus: "match",
+		DigestSource: "registry", DeclaredTools: []string{"Read"}, UndeclaredTools: []string{"Write"},
+		DataClass: "internal", MaxDataClass: "internal", DataClassOver: true,
+		DataClassEscalated: true, ApprovalState: "approved",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{
+		"manifest_present", "manifest_mode", "digest", "digest_status", "digest_source",
+		"declared_tools", "undeclared_tools", "data_class", "max_data_class",
+		"data_class_over", "data_class_escalated", "approval_state",
+	} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("payload JSON lacks %q", k)
+		}
 	}
 }

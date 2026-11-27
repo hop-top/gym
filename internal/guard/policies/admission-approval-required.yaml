@@ -1,0 +1,7 @@
+name: admission-approval-required
+when: |
+  has(payload.approval_state) && payload.approval_state == 'unreviewed'
+effect: warn
+otherwise: allow
+severity: warn
+message: "skill is unreviewed (no operator approval for this digest); run `gym guard approve`"

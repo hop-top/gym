@@ -1,0 +1,7 @@
+name: admission-tools-undeclared
+when: |
+  has(payload.undeclared_tools) && size(payload.undeclared_tools) > 0
+effect: deny
+otherwise: allow
+severity: deny
+message: "SKILL.md allowed-tools lists tools the manifest allowed_tools does not cover"
