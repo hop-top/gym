@@ -143,8 +143,14 @@ func (a *App) newKitRoot() *kitcli.Root {
 			// Start the CEL policy guard subscriber. Loads
 			// built-in policies + user/project overrides, then
 			// listens for install/upgrade requests.
-			if g, err := newGuardForApp(a); err == nil {
-				_ = g.Start(c.Context())
+			g, gerr := newGuardForApp(a)
+			if gerr == nil {
+				gerr = g.Start(c.Context())
+			}
+			if gerr != nil {
+				a.guardErr = gerr
+				a.Logger().Warnf("guard failed to start; installs cannot be policy-gated: %v", gerr)
+			} else {
 				a.guardSub = g
 			}
 		}
