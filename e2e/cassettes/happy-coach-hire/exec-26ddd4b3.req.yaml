@@ -1,0 +1,14 @@
+xrr: "1"
+adapter: exec
+fingerprint: 26ddd4b3
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  argv:
+    - rsx
+    - policy
+    - test
+    - github.com/foo/happy
+    - --json
+    - --policy
+    - balanced
+  stdin: ""

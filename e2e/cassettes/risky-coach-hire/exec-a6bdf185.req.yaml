@@ -1,0 +1,11 @@
+xrr: "1"
+adapter: exec
+fingerprint: a6bdf185
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  argv:
+    - rsx
+    - analyze
+    - github.com/foo/risky
+    - --json
+  stdin: ""

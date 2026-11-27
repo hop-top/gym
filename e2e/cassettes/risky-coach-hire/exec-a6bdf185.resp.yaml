@@ -1,0 +1,17 @@
+xrr: "1"
+adapter: exec
+fingerprint: a6bdf185
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  stdout: |
+    {
+      "repo": {"owner":"foo","name":"risky","url":"https://github.com/foo/risky"},
+      "scores": {"overall": 2.5},
+      "policy": {"profile":"balanced","passed":false,"exit_code":1},
+      "evidence": [
+        {"type":"github","key":"stars","value":"3","source":"github/repos","confidence":1.0}
+      ],
+      "summary": {"deterministic":"red","recommendation":"High-risk candidate. Prefer alternatives unless essential."}
+    }
+  stderr: ""
+  exit_code: 0
