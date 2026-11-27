@@ -101,7 +101,7 @@ func (a *App) evaluateSkillDir(dir string, opts skillDirOptions) (skillDirResult
 	payload := withAdmission(events.SkillInstallRequestedPayload{
 		Skill:              entry.Name,
 		Version:            entry.Version,
-		SourceURL:          entry.SourceURL,
+		SourceURL:          install.RedactURL(entry.SourceURL),
 		Scope:              "project",
 		Postinstall:        scan.Postinstall,
 		ShellHook:          scan.ShellHook,

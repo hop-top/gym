@@ -73,7 +73,7 @@ func (a *App) installGate(requestID string) install.GateFunc {
 			RequestID:          requestID,
 			Skill:              entry.Name,
 			Version:            entry.Version,
-			SourceURL:          entry.SourceURL,
+			SourceURL:          install.RedactURL(entry.SourceURL),
 			Scope:              scope,
 			Paths:              paths,
 			Postinstall:        scan.Postinstall,
@@ -102,7 +102,7 @@ func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) erro
 			Skill:  p.Skill.Name,
 			Scope:  p.Scope,
 			From:   p.Skill.Version,
-			Source: p.Skill.SourceURL,
+			Source: install.RedactURL(p.Skill.SourceURL),
 		})
 	}
 	payload := events.SkillUpgradePlannedPayload{Items: items}
