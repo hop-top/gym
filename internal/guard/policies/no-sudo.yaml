@@ -1,0 +1,11 @@
+name: no-sudo
+when: |
+  has(payload.postinstall) && (
+    payload.postinstall.matches('(?i)\\bsudo\\b') ||
+    payload.postinstall.matches('(?i)\\bdoas\\b') ||
+    payload.postinstall.matches('(?i)\\bpkexec\\b')
+  )
+effect: deny
+otherwise: allow
+severity: deny
+message: install or postinstall script invokes sudo/doas/pkexec

@@ -1,0 +1,15 @@
+name: path-allowlist
+when: |
+  has(payload.paths) && payload.paths.exists(p,
+    p.matches('(?i)(^|/)\\.ssh(/|$)') ||
+    p.startsWith('/etc/') || p == '/etc' ||
+    p.startsWith('/usr/') || p == '/usr' ||
+    p.startsWith('/var/') || p == '/var' ||
+    p.startsWith('/tmp/') || p == '/tmp' ||
+    p.startsWith('/private/var/folders/') ||
+    p.startsWith('C:\\\\Windows')
+  )
+effect: deny
+otherwise: allow
+severity: deny
+message: install path targets a sensitive system location (~/.ssh, /etc, /usr, /var, system temp)

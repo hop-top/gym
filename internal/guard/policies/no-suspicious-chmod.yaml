@@ -1,0 +1,9 @@
+name: no-suspicious-chmod
+when: |
+  has(payload.postinstall) && payload.postinstall.matches(
+    '(?i)\\bchmod\\b[^\\n]*(\\+s|[0-7]*7[0-7]{2})[^\\n]*(\\s/usr|\\s/bin|\\s/etc|\\s~/.ssh|\\s\\$HOME/\\.ssh)'
+  )
+effect: deny
+otherwise: allow
+severity: deny
+message: install runs chmod on /usr, /bin, /etc, or ~/.ssh

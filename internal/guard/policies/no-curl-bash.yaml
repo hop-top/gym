@@ -1,0 +1,9 @@
+name: no-curl-bash
+when: |
+  has(payload.postinstall) && payload.postinstall.matches(
+    '(?i)(curl|wget|fetch)[^|]*\\|\\s*(sh|bash|zsh|fish|ksh|dash)\\b'
+  )
+effect: deny
+otherwise: allow
+severity: deny
+message: install pipes a remote download into a shell (curl|bash pattern)
