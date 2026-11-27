@@ -23,7 +23,7 @@ Learn:
 - filter targets: `gym learn --agent claude --agent "!codex" …`
 - override single path: `gym learn --path <name-or-path> …`
 - compatibility alias: `gym install ...`
-- gate: validator runs (default `skills-ref test {path}`); fail => no install
+- gate: validator runs (default `skills-ref validate {path}`); fail => no install
 
 Train:
 - all: `gym train`

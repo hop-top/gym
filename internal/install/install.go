@@ -79,7 +79,7 @@ type ScanResult struct {
 
 func defaultValidator(v config.ValidatorConfig) config.ValidatorConfig {
 	if len(v.Command) == 0 {
-		v.Command = []string{"skills-ref", "test", "{path}"}
+		v.Command = config.DefaultValidatorCommand()
 	}
 	if v.TimeoutSeconds <= 0 {
 		v.TimeoutSeconds = 20
@@ -95,7 +95,7 @@ func replacePathTokens(parts []string, path string) []string {
 	return out
 }
 
-// ValidateSkillPackage runs configured skills-ref test command against path.
+// ValidateSkillPackage runs configured validator command (default: skills-ref validate) against path.
 func ValidateSkillPackage(path string, v config.ValidatorConfig) error {
 	v = defaultValidator(v)
 	cmdLine := replacePathTokens(v.Command, path)

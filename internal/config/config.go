@@ -42,6 +42,14 @@ type ValidatorConfig struct {
 	TimeoutSeconds int      `json:"timeout_seconds" yaml:"timeout_seconds"`
 }
 
+// DefaultValidatorCommand returns the stock validator argv: the reference
+// skills-ref CLI, which validates a skill directory via its `validate`
+// subcommand and exits non-zero on failure. `{path}` is replaced with the
+// staged skill directory. Returns a fresh slice each call.
+func DefaultValidatorCommand() []string {
+	return []string{"skills-ref", "validate", "{path}"}
+}
+
 type UpgradeConfig struct {
 	MirrorGlobalFromProject bool `json:"mirror_global_from_project" yaml:"mirror_global_from_project"`
 }
@@ -64,7 +72,7 @@ func defaultConfig() Config {
 			MinStars: 100,
 		},
 		Validator: ValidatorConfig{
-			Command:        []string{"skills-ref", "test", "{path}"},
+			Command:        DefaultValidatorCommand(),
 			TimeoutSeconds: 20,
 		},
 		Upgrade: UpgradeConfig{
