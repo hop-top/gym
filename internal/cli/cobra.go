@@ -181,6 +181,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 		a.updateCobra(),
 		a.learnCobra(vp),
 		a.trainCobra(vp),
+		a.unlearnCobra(),
 		a.listCobra(),
 		a.coachCobra(),
 		a.pathsCobra(),
