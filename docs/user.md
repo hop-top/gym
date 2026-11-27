@@ -60,7 +60,7 @@ A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highes
 
 Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`.
 
-The canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` is beside it, and `config.yaml` wins when both exist. Commands that change config write `config.yaml`, first copying the old `config.json` content into it; the old file is never modified. Likewise the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) keep being used while the OS-native one does not exist.
+The canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` is beside it, and `config.yaml` wins when both exist. Commands that change config write `config.yaml`, first copying the old `config.json` content into it; the old file is never modified. Likewise the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) keep being used while the OS-native one does not exist and the matching `XDG_*` variable is unset (a set variable always wins).
 
 Layer extra config for one run with `-c` (repeatable; listed in `gym --help-all`):
 
