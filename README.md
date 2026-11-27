@@ -1,5 +1,14 @@
 # gym
 
+> [!WARNING]
+> **🚧 Do Not Use — History Will Be Rewritten 🚧**
+>
+> This repo is undergoing major restructuring as we selectively
+> open-source internal tools built at
+> [Idea Crafters LLC](https://ideacrafters.com). Git history **will be
+> force-pushed and rewritten** multiple times. Do not fork, clone, or
+> depend on this repo in any capacity until we tag a stable release.
+
 Universal package manager for [agentskills.io](https://agentskills.io) skills.
 
 - Module/binary: `hop.top/gym` / `gym`
@@ -49,11 +58,32 @@ gym repl
 
 ## Behavior Highlights
 
+### Event-driven interop
+
+gym publishes and subscribes on `kit/runtime/bus` for decoupled coordination with rsx, tip, and policy validators. All cross-tool events (coach hiring, skill installs, policy verdicts, hints) flow through the bus. Enables multi-process deployment, replay, and audit trails without tight coupling.
+
 ### Registry update
 
 `gym update` refreshes local registry references and reports:
 - new skills since last update (with origin)
 - installed-skill upgrade candidates by version
+
+### Coach judging via rsx
+
+`gym coach hire` now scores coaches using rsx's repository analysis:
+- Runs `rsx analyze` + `rsx policy test` (cached for 24h).
+- `--strict` fails-closed on rsx timeout; default warns and proceeds.
+- `--refresh-judgement` bypasses cache and re-runs rsx.
+- `--insecure` downgrades DENY to WARN (allow risky coaches).
+- `gym coach list` shows `score=N/100 (verdict)` per coach.
+
+### Policy guards on installs/upgrades
+
+`gym learn` and `gym train` gate on CEL policies that catch risky patterns:
+- Baked-in policies: sudo, curl|bash, secrets, egress in hooks, large binaries, suspicious chmod, /etc/hosts edits, postinstall scripts, package installer shells.
+- `--strict` fails-closed; `--insecure` downgrades DENY to WARN.
+- `gym guard list` shows effective policies; `gym guard test <skill>` dry-runs.
+- User/project policy overrides in `$XDG_CONFIG_HOME/gym/policies/` and `<root>/.gym/policies/`.
 
 ### Warmup (Progressive Disclosure)
 
@@ -66,6 +96,13 @@ gym repl
 
 Implements the agentskills.io progressive disclosure pattern: agents load only name+description at startup (~100 tokens), then fetch full skill content on-demand.
 
+### Cheat sheets (toolspec + tip)
+
+`gym cheat <topic>` renders inline hints from gym's commands and installed skills:
+- `gym cheat warmup` → hints on warmup usage
+- `gym cheat learn` → hints on learn usage
+- `gym cheat --tip-export` → writes tip adapter file for opt-in bridge integration (GYM_TIP_BUS_BRIDGE=1).
+
 ### Learn sources
 
 `gym learn` supports:
@@ -76,7 +113,7 @@ Implements the agentskills.io progressive disclosure pattern: agents load only n
 - if multiple install paths match the chosen scope, `gym learn` installs into all of them
 - use `--agent` patterns (or `--path`) to filter install targets
 
-Install only succeeds if validator passes (`skills-ref test {path}` by default).
+Install gates on validator pass (`skills-ref test {path}` by default) and policy verdicts.
 
 ### Train policy
 
@@ -89,6 +126,17 @@ Install only succeeds if validator passes (`skills-ref test {path}` by default).
   - use `gym train --no-global` to disable global mirror
 - If run outside a project with skills:
   - global skills only
+
+### Global flags (kit/console/cli)
+
+New persistent flags added by the event-driven interop track:
+- `--bus memory|sqlite|network` — event bus adapter (default: env-driven, else memory).
+- `--strict` — fail-closed on policy/judgement timeouts (fail-open by default).
+- `--insecure` — downgrade DENY verdicts to WARN (allow risky coaches/skills).
+- `--gate-timeout=DURATION` — max wait for sync gates (default 30s).
+- `--refresh-judgement` — bypass coach judgement cache.
+
+Inherited from kit/console/cli: `--format`, `--cols`, `--quiet`, `--no-color`, `--no-hints`, `-V`, `-C`, `--profile`, `--progress-format`, `--offline`.
 
 ### CLI parsing/config
 
@@ -121,7 +169,7 @@ Example:
 gym serve --host 127.0.0.1 --port 4873
 ```
 
-Daemon mode:
+Daemon mode (with SQLite bus):
 
 ```bash
 gym serve --daemon --host 127.0.0.1 --port 4873
