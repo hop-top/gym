@@ -80,11 +80,11 @@ func (a *App) cheatRegistry() (*cheat.Registry, error) {
 	}
 	var installed []state.InstalledSkill
 	if g, err := state.LoadGlobal(rt.Dirs.StateHome); err == nil {
-		installed = append(installed, g...)
+		installed = append(installed, a.trustedRecords(rt, g, "global")...)
 	}
 	if rt.InProject {
 		if p, err := state.LoadProject(rt.ProjectRoot); err == nil {
-			installed = append(installed, p...)
+			installed = append(installed, a.trustedRecords(rt, p, "project")...)
 		}
 	}
 	skillSpecs := cheat.BuildSkillSpecs(installed)

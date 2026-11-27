@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/state"
 	"hop.top/gym/internal/upgrade"
 )
 
@@ -28,4 +29,21 @@ func (a *App) trustedPlan(ctx context.Context, plan []upgrade.PlanItem, rt runti
 		kept = append(kept, item)
 	}
 	return kept, errors.Join(refused...)
+}
+
+// trustedRecords drops state records whose install_path fails
+// install.CheckRecordPath before anything reads from the recorded
+// directory (warmup, cheat). Each skipped record warns once and is never
+// read.
+func (a *App) trustedRecords(rt runtime, recs []state.InstalledSkill, scope string) []state.InstalledSkill {
+	parents := install.TrustedParents(scope, rt.Config)
+	out := make([]state.InstalledSkill, 0, len(recs))
+	for _, r := range recs {
+		if err := install.CheckRecordPath(r, scope, rt.ProjectRoot, parents); err != nil {
+			a.Logger().Warnf("skipping installed skill %q: %v", r.Name, err)
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }

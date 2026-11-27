@@ -107,3 +107,41 @@ func TestLearn_RegistryNameCannotEscapeInstallPath(t *testing.T) {
 		t.Fatal("directory outside the install path was replaced")
 	}
 }
+
+// Read-only consumers of state records (warmup, cheat) must not read from a
+// directory an untrusted record points at.
+func TestWarmup_UntrustedStateRecordsNotRead(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "")
+	parent := scratchDir(t)
+	proj := filepath.Join(parent, "proj")
+	outside := filepath.Join(parent, "outside", "evil")
+	writeFiles(t, outside, map[string]string{"SKILL.md": "---\nname: evil\ndescription: LEAKED-FROM-OUTSIDE\n---\n"})
+	good := filepath.Join(proj, ".gym", "skills", "good")
+	writeFiles(t, good, map[string]string{"SKILL.md": "---\nname: good\ndescription: fine\n---\n"})
+	ghome := filepath.Join(home, ".claude", "skills", "gl")
+	writeFiles(t, ghome, map[string]string{"SKILL.md": "---\nname: gl\ndescription: global fine\n---\n"})
+	gout := filepath.Join(parent, "outside", "gevil")
+	writeFiles(t, gout, map[string]string{"SKILL.md": "---\nname: gevil\ndescription: LEAKED-GLOBAL\n---\n"})
+
+	writeFiles(t, proj, map[string]string{".gym/installed.json": fmt.Sprintf(
+		`{"skills":[{"name":"good","version":"1","install_path":%q},{"name":"evil","version":"1","install_path":%q}]}`, good, outside)})
+	writeFiles(t, filepath.Join(home, ".local", "state", "gym"), map[string]string{"installed-global.json": fmt.Sprintf(
+		`{"skills":[{"name":"gl","version":"1","install_path":%q},{"name":"gevil","version":"1","install_path":%q}]}`, ghome, gout)})
+
+	code, out, errs := runGym(t, proj, "warmup", "--format", "json")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	if strings.Contains(out, "LEAKED") || strings.Contains(out, outside) || strings.Contains(out, gout) {
+		t.Fatalf("untrusted record read or listed:\n%s", out)
+	}
+	if !strings.Contains(out, "fine") || !strings.Contains(out, "global fine") {
+		t.Fatalf("legitimate records missing:\n%s", out)
+	}
+	for _, p := range []string{outside, gout} {
+		if strings.Count(errs, "install-path-untrusted: "+p) != 1 {
+			t.Errorf("want exactly one warning for %s:\n%s", p, errs)
+		}
+	}
+}
