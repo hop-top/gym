@@ -72,8 +72,11 @@ Serve:
 - endpoints: `/skills.json` `/health` `/_index.json`
 
 Files:
-- user cfg: `$XDG_CONFIG_HOME/gym/config.json` (fallback `~/.config/gym/config.json`)
-- project cfg: `<root>/.gym/config.json`
+- system cfg: `/etc/gym/config.yaml`
+- user cfg: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else OS default: Linux `~/.config/gym`, macOS `~/Library/Application Support/gym`)
+- project cfg: nearest `.gym/config.yaml` at or above cwd
+- layering: defaults < system < user < project < `-c <file>` < `-c key=value`; lists replaced, not appended
+- `-c key=value` / `-c <file>` repeatable; shown in `gym --help-all`
 - global state: `$XDG_STATE_HOME/gym/installed-global.json`
 - project state: `<root>/.gym/installed.json`
 - index cache: `$XDG_DATA_HOME/gym/registry-index.json`

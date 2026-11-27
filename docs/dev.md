@@ -43,12 +43,17 @@ make fmt
 
 ## Config + Precedence
 
-- Config sources:
-  - user: `$XDG_CONFIG_HOME/gym/config.json` (fallback `~/.config/gym/config.json`)
-  - project: `<project-root>/.gym/config.json` (only if a project root is detected)
-- Merge strategy:
-  - arrays append (repositories/install_paths)
-  - scalar blocks override defaults when present (`curation`, `validator`, `upgrade`)
+- Loader: `internal/config.LoadMergedConfig` delegates to `hop.top/kit/go/core/config` `Load`; typed defaults via `Options.Defaults`; no gym-side merge.
+- Config sources (YAML; paths from kit's `OptionsForToolWithMarkersFrom`):
+  - system: `/etc/gym/config.yaml`
+  - user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else OS default: Linux `~/.config/gym`, macOS `~/Library/Application Support/gym`)
+  - project: nearest `.gym/config.yaml` at or above cwd
+  - `-c <file>`: kit's `-c/--config` flag; `PersistentPreRunE` passes `Root.ConfigArgs()` files and overrides into the loader
+- Precedence: defaults < system < user < project < `-c <file>` < `-c key=value`.
+- Merge strategy (kit): scalars replace, maps merge, lists replace (no append across layers).
+- Mutations (`AddInstallPath`, `AddRepository`, `RemoveRepository`) write one key via kit `SetValue`, preserving the rest of the file.
+- Struct fields carry `yaml` tags; kit matches keys (files and `-c key=value`) by them.
+- `-c/--config` is hidden from default `--help` by kit; `execCobra` calls `Root.ApplyGroupVisibility` so `--help-all` reveals it.
 
 ## Registry Refresh
 
