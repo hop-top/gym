@@ -2,12 +2,15 @@ package fsutil
 
 import (
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
 
-// CopyDir recursively copies src directory tree into dst.
-func CopyDir(src, dst string) error {
+// CopyDir recursively copies src directory tree into dst. skip, when
+// non-nil, is called with each entry's path relative to src ("." for the
+// root); a skipped directory is not descended into.
+func CopyDir(src, dst string, skip func(rel string, d fs.DirEntry) bool) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -15,6 +18,12 @@ func CopyDir(src, dst string) error {
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
+		}
+		if skip != nil && skip(rel, d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
