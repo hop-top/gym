@@ -54,7 +54,7 @@ gym install <skill-name>
 
 Default behavior:
 - Installs to `CWD/.gym/skills` (project-local)
-- Runs validator (`skills-ref test {path}`)
+- Runs validator (`skills-ref validate {path}`)
 - If multiple paths match scope, installs to all
 - Installation fails if validation fails
 
@@ -189,7 +189,7 @@ Environment overrides:
     "min_stars": 100
   },
   "validator": {
-    "command": ["skills-ref", "test", "{path}"],
+    "command": ["skills-ref", "validate", "{path}"],
     "timeout_seconds": 20
   },
   "upgrade": {
@@ -261,7 +261,7 @@ gym repl
 
 ## Notes
 
-- Validator gate is enabled by default (`skills-ref test {path}`)
+- Validator gate is enabled by default (`skills-ref validate {path}`)
 - Skills must follow agentskills.io specification
 - Curated skills require `min_stars` threshold (default: 100)
 - Install paths can be filtered by agent patterns
