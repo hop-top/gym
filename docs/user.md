@@ -58,7 +58,9 @@ Two scopes exist for *config*:
 
 A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highest: defaults, system, user, project, `-c <file>`, `-c key=value`. Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
 
-Project roots are detected by presence of `.gym/config.yaml` or `.gym/installed.json`.
+Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`.
+
+The canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` is beside it, and `config.yaml` wins when both exist. Commands that change config write `config.yaml`, first copying the old `config.json` content into it; the old file is never modified. Likewise the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) keep being used while the OS-native one does not exist.
 
 Layer extra config for one run with `-c` (repeatable; listed in `gym --help-all`):
 
