@@ -13,6 +13,7 @@ import (
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/lock"
+	"hop.top/gym/internal/netpolicy"
 )
 
 // registerAdmissionFlags adds the persistent --max-data-class flag
@@ -95,6 +96,10 @@ func rejectionReason(err error) string {
 	var re *install.RefusedError
 	if errors.As(err, &re) {
 		return re.Reason
+	}
+	var ne *netpolicy.Error
+	if errors.As(err, &ne) {
+		return netpolicy.ReasonDenied
 	}
 	var le *lock.Error
 	if errors.As(err, &le) && le.Reason == lock.ReasonSourceEscapes {

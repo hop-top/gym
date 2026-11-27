@@ -72,6 +72,9 @@ type App struct {
 	// maxDataClass is the --max-data-class override.
 	maxDataClass string
 
+	// offline mirrors the global --offline flag of the running command.
+	offline bool
+
 	// scopeDir is the --dir folder of the running command, "" when unset
 	// (see applyDirFlag).
 	scopeDir string
@@ -142,7 +145,7 @@ func (a *App) exec(args []string) error {
 func (a *App) registryConfigFrom(cfg config.Config) registry.Config {
 	repos := make([]registry.RepositorySource, 0, len(cfg.Repositories))
 	for _, r := range cfg.Repositories {
-		repos = append(repos, registry.RepositorySource{Name: r.Name, URL: r.URL, Curated: r.Curated})
+		repos = append(repos, registry.RepositorySource{Name: r.Name, URL: r.URL, Curated: r.Curated, Auth: r.Auth})
 	}
 	return registry.Config{Repositories: repos, MinStarsForCurated: cfg.Curation.MinStars}
 }

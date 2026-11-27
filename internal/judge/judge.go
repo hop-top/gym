@@ -27,6 +27,10 @@ type Judge struct {
 	// Bound to the persistent --refresh-judgement flag at boot.
 	refresh func() bool
 
+	// netGate, when set, is consulted before rsx is spawned; an error
+	// skips the subprocess (rsx reads from public hosts).
+	netGate func() error
+
 	// dedup is a request_id -> chan to ensure idempotency: a second
 	// publish carrying the same request_id reuses the first
 	// judgement instead of running rsx twice.
@@ -88,6 +92,12 @@ func WithResolver(r Resolver) Option {
 // WithCache overrides the default file-backed cache.
 func WithCache(c *Cache) Option {
 	return funcOption{judge: func(j *Judge) { j.cache = c }}
+}
+
+// WithNetworkGate makes the judge skip the rsx subprocess, with a warning,
+// whenever fn returns an error. Cached judgements are still served.
+func WithNetworkGate(fn func() error) Option {
+	return funcOption{judge: func(j *Judge) { j.netGate = fn }}
 }
 
 // WithRefreshFunc binds a callable that reports whether the cache
@@ -199,6 +209,20 @@ func (j *Judge) resolveCached(ctx context.Context, repo string) Judgement {
 	if !j.refresh() && j.cache != nil {
 		if cached, ok, err := j.cache.Get(repo); ok && err == nil {
 			return cached
+		}
+	}
+	if j.netGate != nil {
+		if gerr := j.netGate(); gerr != nil {
+			j.warnf("skipping rsx for %s: %v", repo, gerr)
+			return Judgement{
+				Repo:    repo,
+				Verdict: "warn",
+				Findings: []events.PolicyFinding{{
+					Rule:     "judge-skipped",
+					Severity: "warn",
+					Message:  "rsx not run: " + gerr.Error(),
+				}},
+			}
 		}
 	}
 	jud, err := j.resolver.Resolve(ctx, repo)

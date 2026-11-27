@@ -18,6 +18,7 @@ import (
 	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/judge"
+	"hop.top/gym/internal/registry"
 )
 
 // coachHireOptions bundles the runtime knobs runCoachHire needs.
@@ -46,12 +47,7 @@ func tryFetchManifestInfo(ctx context.Context, manifestURL string) (manifestInfo
 		At:    time.Now().UTC(),
 	})
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
-	if err != nil {
-		emitFetchManifestDone(ctx, rep, manifestURL, false)
-		return manifestInfo{}, err
-	}
-	resp, err := client.Do(req)
+	resp, err := registry.Get(ctx, client, manifestURL, nil, "")
 	if err != nil {
 		emitFetchManifestDone(ctx, rep, manifestURL, false)
 		return manifestInfo{}, err
