@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	kitcli "hop.top/kit/go/console/cli"
 	kitprogress "hop.top/kit/go/console/progress"
@@ -63,6 +64,9 @@ func (a *App) newKitRoot() *kitcli.Root {
 	})
 
 	cmd := root.Cmd
+	// Flags kit registered; anything added after this is gym's own.
+	kitFlags := map[string]bool{}
+	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) { kitFlags[f.Name] = true })
 
 	// Gym-specific persistent flags layered on top of kit's globals
 	// (--format, --quiet, --no-color, --no-hints, --offline, -V, -C,
@@ -73,6 +77,13 @@ func (a *App) newKitRoot() *kitcli.Root {
 	cmd.PersistentFlags().Bool("refresh-judgement", false, "bypass coach judgement cache (re-run rsx)")
 	cmd.PersistentFlags().Bool("insecure", false, "lower DENY verdicts to WARN (allow risky coaches/skills)")
 	a.registerAdmissionFlags(cmd)
+
+	var gymFlags []string
+	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if !kitFlags[f.Name] {
+			gymFlags = append(gymFlags, f.Name)
+		}
+	})
 
 	// Per-command viper instance; kept legacy-compatible with previous flag
 	// keys (learn.global, learn.path, learn.agents, train.no_global) so user
@@ -92,11 +103,15 @@ func (a *App) newKitRoot() *kitcli.Root {
 			return err
 		}
 		a.cfgPaths, a.cfgOverrides = paths, overrides
-		// Bind --strict to the per-command viper (and the global one
-		// for callers that read viper.GetViper() — kit/cli does).
-		if f := c.Flags().Lookup(eventbus.StrictKey); f != nil {
-			_ = vp.BindPFlag(eventbus.StrictKey, f)
-			_ = viper.BindPFlag(eventbus.StrictKey, f)
+		// Bind every gym persistent flag (--strict, --insecure,
+		// --gate-timeout, ...) to the per-command viper and to the
+		// global one, which kit/cli and guard.GateConfig read. Keys
+		// are the flag names.
+		for _, name := range gymFlags {
+			if f := c.Flags().Lookup(name); f != nil {
+				_ = vp.BindPFlag(name, f)
+				_ = viper.BindPFlag(name, f)
+			}
 		}
 		// Snapshot --no-color so REPL/markdown rendering matches the
 		// global flag without re-reading viper inside Bubble Tea.
