@@ -20,8 +20,11 @@ import (
 
 // Request holds installation inputs.
 type Request struct {
-	Entry    registry.SkillEntry
-	Source   string
+	Entry  registry.SkillEntry
+	Source string
+	// Ref is the git branch, tag or 40/64-hex commit to stage the source
+	// at; empty takes the default branch (or the directory as is).
+	Ref      string
 	Scope    string // global|project
 	PathHint string
 	// AgentPatterns filters install paths by name/path. Use "!" prefix to exclude.
@@ -48,6 +51,16 @@ type Request struct {
 	// ApprovalsPath overrides the user-level approvals file. Empty
 	// uses the default under the gym user config dir.
 	ApprovalsPath string
+
+	// Outcome, when set, receives what staging learned about the source.
+	Outcome *Outcome
+}
+
+// Outcome is what an install reports back beyond the state record.
+type Outcome struct {
+	// Commit is the git commit the source was staged at ("" for a
+	// directory source).
+	Commit string
 }
 
 // GateFunc is the optional pre-install policy hook. paths is the list
@@ -287,15 +300,13 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	if err := CheckSourceURL(entry.SourceURL); err != nil {
 		return state.InstalledSkill{}, err
 	}
-	root, cleanup, err := stageSource(ctx, entry.SourceURL)
+	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref)
 	if err != nil {
 		return state.InstalledSkill{}, err
 	}
 	defer cleanup()
-
-	skillPath := root
-	if entry.Path != "" {
-		skillPath = filepath.Join(root, entry.Path)
+	if req.Outcome != nil {
+		req.Outcome.Commit = commit
 	}
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return state.InstalledSkill{}, err
@@ -347,15 +358,13 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	if err := CheckSourceURL(entry.SourceURL); err != nil {
 		return nil, err
 	}
-	root, cleanup, err := stageSource(ctx, entry.SourceURL)
+	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-
-	skillPath := root
-	if entry.Path != "" {
-		skillPath = filepath.Join(root, entry.Path)
+	if req.Outcome != nil {
+		req.Outcome.Commit = commit
 	}
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return nil, err
