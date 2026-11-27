@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	kitcli "hop.top/kit/go/console/cli"
+
 	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/ide"
 	"hop.top/gym/internal/install"
@@ -24,6 +26,13 @@ type App struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	CWD    string
+
+	// theme is the kit/cli theme used by the TUI/REPL views.
+	theme kitcli.Theme
+
+	// noColor mirrors the global --no-color flag; used by markdown
+	// rendering in the REPL.
+	noColor bool
 }
 
 func NewApp(stdout, stderr io.Writer, cwd string) *App {
