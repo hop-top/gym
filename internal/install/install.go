@@ -312,7 +312,7 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	if err := CheckSourceURL(entry.SourceURL); err != nil {
 		return state.InstalledSkill{}, err
 	}
-	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref)
+	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref, req.Config)
 	if err != nil {
 		return state.InstalledSkill{}, err
 	}
@@ -370,7 +370,7 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	if err := CheckSourceURL(entry.SourceURL); err != nil {
 		return nil, err
 	}
-	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref)
+	skillPath, commit, cleanup, err := stageEntry(ctx, entry, req.Ref, req.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -437,6 +437,8 @@ func admitStaged(req Request, entry registry.SkillEntry, skillPath, commit strin
 // a URL or anything with a ref, dir for an existing directory.
 func DeriveKind(source, ref string) string {
 	switch {
+	case IsArchiveSource(source):
+		return lock.KindArchive
 	case ref != "" || looksLikeURL(source):
 		return lock.KindGit
 	case IsDirSource(source):
