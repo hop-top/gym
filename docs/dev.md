@@ -54,7 +54,7 @@ make fmt
   - `-c <file>`: kit's `-c/--config` flag; `PersistentPreRunE` passes `Root.ConfigArgs()` files and overrides into the loader
 - Precedence: defaults < system < user < folder chain (outermost to innermost) < `-c <file>` < `-c key=value`.
 - Merge strategy (kit): scalars replace, maps merge, lists replace (no append across layers).
-- The folder layers are repository content and are not handed to kit with the others. `loadChained` (`internal/config/chain.go`; `LoadScoped` for a given scope root, `loadConfigWarn` for a cwd) loads defaults+system+user through kit, reads each folder file alone (`readProjectLayer`, `internal/config/project_layer.go`), outermost first, copies only the allowlisted keys onto the result (an inner folder's key replaces an outer one's) (`projectKeys`: `install_paths`, `repositories`, `curation`, `upgrade`; `admission` goes through `loadAdmission`, which folds each folder with `foldAdmission` and the `Clamp*` functions: an inner folder can only tighten), then applies `-c` files and overrides unrestricted. Any other key warns once (`config: ignoring project key "<key>" (user/system/-c only)`), so a key added to `Config` is ignored from a project until listed. `LoadMergedConfigWarn` returns the warnings; the CLI prints them.
+- The folder layers are repository content and are not handed to kit with the others. `loadChained` (`internal/config/chain.go`; `LoadScoped` for a given scope root, `loadConfigWarn` for a cwd) loads defaults+system+user through kit, reads each folder file alone (`readProjectLayer`, `internal/config/project_layer.go`), outermost first, copies only the allowlisted keys onto the result (an inner folder's key replaces an outer one's) (`projectKeys`: `install_paths`, `repositories`, `curation`, `upgrade`, `lock`; `lock.frozen` folds with or, so a folder can turn it on and never off; `admission` goes through `loadAdmission`, which folds each folder with `foldAdmission` and the `Clamp*` functions: an inner folder can only tighten, `require_pin` included via `ClampRequirePin`), then applies `-c` files and overrides unrestricted. Any other key warns once (`config: ignoring project key "<key>" (user/system/-c only)`), so a key added to `Config` is ignored from a project until listed. `LoadMergedConfigWarn` returns the warnings; the CLI prints them.
 - Folder `install_paths` (`sanitizeProjectPaths`): relative, no `..` escape, no `~`, inside the folder that wrote them after `ResolveExisting` (symlinks on the existing prefix); kept entries are made absolute against the scope root being operated on (and must stay inside it), so an inherited relative path lands in each folder's own tree. `normalizePaths` anchors operator-layer relative project paths at the project root too, never the working directory.
 - Mutations (`AddInstallPath`, `AddRepository`, `RemoveRepository`) write one key via kit `SetValue`, preserving the rest of the file.
 - Struct fields carry `yaml` tags; kit matches keys (files and `-c key=value`) by them.
@@ -78,9 +78,9 @@ make fmt
   - config `curated: true` is downgraded if `repository.stars < min_stars`
   - `repository.curated` or `repository.curated_early` forces curated
 - flatten skill entries into a merged index:
-  - one best entry per skill name
-  - prefer curated; otherwise prefer newer version
-- report diffs vs previous index (new skills, upgrade candidates)
+  - one entry per `(name, version)` (a leading `v` is ignored); the best of equal pairs wins (curated, then repository name)
+  - entries sorted by name, best first; `Index.Find(name)` returns the best (curated, then newer version), `Index.FindVersion(name, version)` the exact version, `Index.Versions(name)` the list
+- report diffs vs previous index (new skills, upgrade candidates), best entry to best entry per name
 
 Index storage:
 - `$XDG_DATA_HOME/gym/registry-index.json`
@@ -88,14 +88,15 @@ Index storage:
 ## Install
 
 `internal/install.InstallSkill`:
-- stage source:
+- stage source (`internal/install/source.go`, `StageSource`):
   - local directory: use as-is
   - URL: `git clone --depth 1` to temp dir
+  - URL, file URL or directory with a `#ref` (`SplitRef`, `ValidRef`): branch or tag by `git clone --depth 1 --branch <ref>`; a 40/64-hex commit by `git init`, `remote add`, `fetch --depth 1 origin <sha>`, `checkout --detach FETCH_HEAD`. Refs starting with `-` or holding odd characters are refused, and `--` precedes every URL. A remote without the ref is `ref-not-found: <ref> at <url>` (a command error, nothing published). `git rev-parse HEAD` of the checkout is reported through `Request.Outcome.Commit` (the lock's `commit`)
 - resolve skill root:
   - if registry entry has `path`, use `<repo>/<path>`
   - else use repo root
 - validate using configured `validator.command` (default `skills-ref validate {path}`)
-- admission (`internal/install/admission.go`, `Admit`): digest, pin, `gym.json`, tool coverage, ceiling, approval
+- admission (`internal/install/admission.go`, `Admit`): digest, pin, `gym.json`, tool coverage, ceiling, approval. `Request` carries the pin inputs: `Lock` (the lock entry being honoured), `ExpectDigest` (operator), `Kind` (`registry|git|dir`, as the caller resolved it), `Requested`, `Ref`
 - gate (policies) with the admission facts
 - copy validated directory into install path:
   - destination is `<install-path>/<skill-name>`; the name must be a single path component
@@ -108,6 +109,25 @@ State trust: a state record's `install_path` is used for a write or delete only 
 
 `gym train` passes a per-skill gate (request-scoped) in addition to the plan gate.
 
+### Lock and pins
+
+Design: [ADR-0003](adr/0003-folder-scopes-lockfile-uninstall-sources.md) section 2. `internal/lock` is the file (`gym.lock/v1`: `Parse` is strict, `Marshal` deterministic, `Save` atomic through `fsutil.WriteFileAtomic`; `SourceForLock` and `ResolveSource` store and resolve local sources, refusing absolute or escaping ones in a project lock with `lock-source-escapes`). Path: `<root>/.gym/lock.json`, global `<ConfigHome>/lock.json` (`internal/xdg`). Commands: `internal/cli/learn.go` (token flow, restore, frozen), `learn_lock.go` (lock location, writers, train pins, unlearn hook), `lock_check.go` (restore, verify, `list --check`), `learn_resolve.go` (`name@version`, `url#ref`). `internal/install/drift.go` (`LockDrift`) compares a lock with trusted state records: `missing`, `digest-drift`, `modified`, `untracked` (the first three fail).
+
+Flow of `learn <name>` with a lock entry: the entry becomes the install target (`lockedTarget`: source resolved inside the scope root, `Ref` = locked commit); `Request.Lock` makes the locked digest the pin; the registry index only contributes its digest for the same version, so a disagreement is reported (`digest_pin_conflict`) and the lock still wins. `learn` with no arguments never calls `registry.LoadIndex`. The lock is written after the install directories and the state; unlearn's `OnSkillGone` hook removes an entry last.
+
+`ExpectedDigest(entry, lock) (digest, source, conflict)`: lock entry, then registry digest; `Admit` applies the operator's `ExpectDigest` first and then reports no conflict. `conflict` only when both pin different digests for the same `version`. `digest_source` is `operator`, `lockfile` or `registry`.
+
+| Reason | Where | Published as `install.rejected` |
+|--------|-------|----------------------------------|
+| `pin-unavailable`, `ref-not-found` | `learn name@version`, `url#ref` | no |
+| `lock-missing`, `lock-invalid`, `lock-frozen` | lock load, `--frozen`, train | no |
+| `lock-drift` | `learn --frozen` (one event per drifted skill) | yes |
+| `lock-source-escapes` | restore or `learn <name>` of a locked local source | yes |
+| `digest-required` | `admission.require_pin` (policy `admission-digest-required`) | yes |
+| `digest-pin-conflict` | warn finding `admission-digest-pin-conflict` | no (not a rejection) |
+
+`admission.require_pin` (`none|remote|all`, default `none`) is clamped like `require_manifest`: `ClampRequirePin`, and a project or folder layer can only raise it. `remote` covers registry and git sources now (archive sources come with the sources work); the fact is `digest_status = unpinned-required`.
+
 ## Admission
 
 Design: [ADR-0002](adr/0002-skill-manifest-admission.md). `install.Admit` is read-only and shared by install, upgrade, and `gym guard test <dir>`.
@@ -119,11 +139,14 @@ admission:
   max_data_class: internal
   require_manifest: warn
   require_approval: false
+  require_pin: none
+lock:
+  frozen: false
 ```
 
 Files: `internal/install/{admission,digest,manifest,tools}.go`, `internal/dataclass` (ladder), `internal/approvals` (operator store), `internal/config/admission.go`, `internal/guard/policies/admission-*.yaml`, `internal/cli/{admission,guard_admission,approvals,digest}.go`.
 
-Digest `gym.digest/v1`: regular files only under the skill root, `.git` directories skipped, symlinks rejected (`digest-unsupported-entry`); one line `<x|-> <hex> <relpath>` per file (`x` = owner-exec bit), sorted bytewise on path; digest is `sha256:` + sha256 of the listing. The expected pin comes from `install.ExpectedDigest` (registry `digest` field today; a lockfile backend would slot in ahead of it).
+Digest `gym.digest/v1`: regular files only under the skill root, `.git` directories skipped, symlinks rejected (`digest-unsupported-entry`); one line `<x|-> <hex> <relpath>` per file (`x` = owner-exec bit), sorted bytewise on path; digest is `sha256:` + sha256 of the listing. The expected pin comes from `install.ExpectedDigest`: the operator's `--digest`, then the lock entry, then the registry `digest` field.
 
 ### Hard failures and rejection reasons
 
@@ -149,7 +172,7 @@ Deny-severity findings pick the reason (warn findings only under `--strict`, whe
 
 ### Uninstall (`gym unlearn`)
 
-Implementation: `internal/cli/unlearn.go` (command, matching, confirmation, events), `internal/install/remove.go` (`Remover`), `internal/fsutil/atomic.go` (state writes). Every directory is deleted by `Remover.RemoveSkill` only after `install.CheckRecordPath` accepts the record; there is no other deletion path. Order per record: validate, modified check (re-hash vs `state.digest`), `RemoveAll` of the validated path (already absent counts as removed), then the record leaves `installed.json` by atomic write. The modified check is skipped for a tree with only directories at any depth (no files, symlinks or irregular entries; symlinks are not followed), so a retry after an interrupted `RemoveAll` needs no `--force`. `Remover.OnSkillGone(name)` fires once when no record of the skill remains in the scope: the hook for lock-entry removal.
+Implementation: `internal/cli/unlearn.go` (command, matching, confirmation, events), `internal/install/remove.go` (`Remover`), `internal/fsutil/atomic.go` (state writes). Every directory is deleted by `Remover.RemoveSkill` only after `install.CheckRecordPath` accepts the record; there is no other deletion path. Order per record: validate, modified check (re-hash vs `state.digest`), `RemoveAll` of the validated path (already absent counts as removed), then the record leaves `installed.json` by atomic write. The modified check is skipped for a tree with only directories at any depth (no files, symlinks or irregular entries; symlinks are not followed), so a retry after an interrupted `RemoveAll` needs no `--force`. `Remover.OnSkillGone(name)` fires once when no record of the skill remains in the scope; `unlearn` wires it to remove the scope's lock entry (`--keep-lock` leaves it; a corrupt lock is reported as `remove-failed` and left untouched).
 
 | Topic | Payload |
 |-------|---------|
@@ -177,8 +200,13 @@ Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `o
 | `manifest_present` | bool | `gym.json` found and valid |
 | `manifest_mode` | string | `admission.require_manifest`: `off`/`warn`/`reject` |
 | `digest` | string | computed `sha256:<hex>` |
-| `digest_status` | string | `match` / `unpinned` (`mismatch` is a hard failure) |
-| `digest_source` | string | `registry` / `` |
+| `digest_status` | string | `match` / `unpinned` / `unpinned-required` (`admission.require_pin` demands a pin; `mismatch` is a hard failure) |
+| `digest_source` | string | `operator` / `lockfile` / `registry` / `` |
+| `digest_pin_conflict` | bool | lock and registry pin different digests for the same version; the lock won |
+| `source_kind` | string | `registry` / `git` / `dir` |
+| `requested` | string | what the operator pinned: the version after `@` or the ref after `#` |
+| `resolved` | string | git commit staged |
+| `lock_present` | bool | a lock entry was honoured as the pin |
 | `declared_tools` | string[] | manifest `allowed_tools` (sorted) |
 | `undeclared_tools` | string[] | SKILL.md `allowed-tools` tokens no declared token covers |
 | `data_class` | string | manifest value or `` |
@@ -194,6 +222,8 @@ Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `o
 | `admission-tools-undeclared` | `undeclared_tools` non-empty | deny |
 | `admission-data-class` | `data_class_over` | deny |
 | `admission-digest-unpinned` | `digest_status == 'unpinned'` | warn |
+| `admission-digest-required` | `digest_status == 'unpinned-required'` | deny (reason `digest-required`) |
+| `admission-digest-pin-conflict` | `digest_pin_conflict` | warn (reason `digest-pin-conflict`) |
 | `admission-approval-required` | `approval_state == 'unreviewed'` | warn |
 | `admission-approval-enforced` | `approval_state == 'required-missing'` | deny |
 | `admission-manifest-missing` | no manifest, mode `warn` | warn |
@@ -201,7 +231,7 @@ Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `o
 | `admission-tools-unrestricted` | declared tools contain bare `Bash` | warn |
 | `admission-data-class-escalated` | `data_class_escalated` | warn |
 
-Config-driven effects (`require_approval`, `require_manifest`) change fact values, not policies, so a project policy override cannot weaken an operator setting.
+Config-driven effects (`require_approval`, `require_manifest`, `require_pin`) change fact values, not policies, so a project policy override cannot weaken an operator setting.
 
 ## Upgrade Policy
 
@@ -213,6 +243,7 @@ Upgrade selection is planned in `internal/upgrade.Plan`:
   - `--no-global` disables mirroring
 - the project scope is the folder scope at `--dir`, else the nearest root; `Input.ProjectRoot` becomes `PlanItem.Root`
 - `--recursive` plans each nested scope separately (see Folder scopes)
+- lock (see Lock and pins): after the plan is trusted, items whose lock entry has `requested` are dropped with a `skip <name>: pinned to <requested> ...` line; with `--frozen` or `lock.frozen` any item whose registry entry is newer fails `lock-frozen` before the gate; each upgraded item's lock entry (in the item's own scope: the folder's lock, or the global lock for a mirrored item) is replaced after the state is saved; a skill with no lock entry stays unlisted
 
 ## Kit primitive adoption
 

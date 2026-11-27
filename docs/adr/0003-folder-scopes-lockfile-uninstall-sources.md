@@ -147,7 +147,7 @@ Re-break tests: A7, A8, A9, A5 (remove the clamp / containment / ownership check
 
 Registry needs old versions: `Refresh` keeps every `(name, version)`; `Index.Find(name)` returns the best (current behaviour, `preferSkill`), new `Index.FindVersion`. `gym serve` serves all versions and now includes `digest` (fix of finding 5). `UpgradeDiff` compares best-to-best as before.
 
-Git staging (`internal/install/source.go`, new): branch/tag: `git clone --depth 1 --branch <ref>`; 40/64-hex: `git init`, `remote add`, `fetch --depth 1 origin <sha>`, `checkout --detach FETCH_HEAD`. Unresolvable: `ref-not-found: <ref> at <redacted url>`. Tags move, so the commit and digest in the lock are the anchor, not the tag.
+Git staging (`internal/install/source.go`, new): branch/tag: `git clone --depth 1 --branch <ref>`; 40/64-hex: `git init`, `remote add`, `fetch --depth 1 origin <sha>`, `checkout --detach FETCH_HEAD`. Unresolvable: `ref-not-found: <ref> at <redacted url>`. Tags move, so the commit and digest in the lock are the anchor, not the tag. A ref may not start with `-` or hold characters outside `A-Za-z0-9._/+-` or `..` (`invalid ref`), and every URL follows `--`. A `#ref` applies to a URL, a `file://` URL or an existing directory; the checkout's `git rev-parse HEAD` is the lock's `commit`. A directory or `file://` directory without a ref is a `dir` source, as before (copied in place, `.git` skipped), not a clone. `archive` is not produced yet (next work).
 
 ### 2.2 Lockfile
 
@@ -180,11 +180,11 @@ Git staging (`internal/install/source.go`, new): branch/tag: `git clone --depth 
 }
 ```
 
-Fields: `name`, `kind` (`registry|git|dir|archive`), `source` (credential-free locator; dir sources stored relative to the lock's folder when inside it, else absolute with finding `lock-source-not-portable`), `requested` (what the user typed after `@`/`#`; absent = tracking), `version`, `commit` (git/registry-over-git), `path` (skill subdir), `registry` (origin index URL, registry kind), `digest`. `scope` is per file and must match the file's location. One entry per name per file (multi-path installs share one digest). A tampered entry fails `digest` anyway; lock content is never trusted as code or path (below).
+Fields: `name`, `kind` (`registry|git|dir|archive`), `source` (credential-free locator; dir sources stored relative to the lock's folder when inside it, else absolute with finding `lock-source-not-portable`), `requested` (what the user typed after `@`/`#`; absent = tracking), `version`, `commit` (git/registry-over-git), `path` (skill subdir), `registry` (origin index URL, registry kind), `digest`. `scope` is per file and must match the file's location. One entry per name per file (multi-path installs share one digest). A tampered entry fails `digest` anyway; lock content is never trusted as code or path (below). A lock is invalid (`lock-invalid: <path>: <why>`) for an unknown field or trailing data, another `schema` or `digest_scheme`, a `scope` that is not the file's, a duplicate or path-like `name`, an unknown `kind`, an empty `source`, a malformed `digest` or `commit`, or a `path` that is absolute or holds `..`. The base for a relative local `source` is the scope root (project) or the config directory (global). The global lock is the operator's own: it may hold absolute sources.
 
-Writers: `learn` (add/replace, unless `--no-lock`), `train` (replace upgraded entries), `unlearn` (remove). Written after install dirs and state succeed, so a crash leaves drift (detectable), never a lock entry for an uninstalled-and-unverified tree.
+Writers: `learn` (add/replace, unless `--no-lock`), `train` (replace upgraded entries that the lock already lists; a skill it does not list stays unlisted), `unlearn` (remove, unless `--keep-lock`). Written after install dirs and state succeed, so a crash leaves drift (detectable), never a lock entry for an uninstalled-and-unverified tree. A corrupt lock stops `learn` and `train` before they change anything. `.gym/.gitignore` is written with the first project lock write.
 
-Lock `source` of a hostile folder (cloned repo): absolute local dirs or `..` escapes are refused: `lock-source-escapes: <p>`. Sources must pass the network policy and admission like any other.
+Lock `source` of a hostile folder (cloned repo): absolute local sources (a path or a `file://` URL) and relative ones that leave the folder, symlinks resolved, are refused before anything is read: `lock-source-escapes: <p>`. Writing is the other half: a local source outside the scope root is stored absolute with the finding `lock-source-not-portable`, which a project lock will then not restore from; the way out is a source inside the folder. Sources must pass the network policy and admission like any other.
 
 ### 2.3 Behaviour
 
@@ -192,18 +192,18 @@ Lock `source` of a hostile folder (cloned repo): absolute local dirs or `..` esc
 |---------|-----------|
 | `gym learn lint` | If the lock has `lint`: install the locked source at the locked commit, expect the locked digest; print `using locked 1.2.0 (gym train to upgrade)`. Else resolve as today, lock the result |
 | `gym learn lint@1.3.0`, `url#ref` | New request; replaces the lock entry on success |
-| `gym learn` (no args) | Install every lock entry of the scope that is missing or drifted; consults the lock's `source`, not the registry index (works offline with a mirror). Requires a lock: `lock-missing: <path> not found` |
-| `gym learn --digest sha256:<hex> <tok>` | Operator pin without a lock (`digest_source: operator`); written to the lock on success |
-| `gym learn --frozen` | Never writes the lock. Verifies every entry (installed or not); any difference is `lock-drift` |
+| `gym learn` (no args) | Install every lock entry of the scope that is missing, digest-drifted or modified; consults the lock's `source`, not the registry index (works offline with a mirror; the index is never read). One failing entry does not stop the rest, exit 1 at the end; the lock is not rewritten. Requires a lock: `lock-missing: <path> not found` |
+| `gym learn --digest sha256:<hex> <tok>` | Operator pin without a lock (`digest_source: operator`); written to the lock on success. Exactly one `<tok>`; a lock entry is not consulted |
+| `gym learn --frozen` | Never writes the lock and installs nothing. Verifies every entry (installed or not); any difference (missing, digest-drift, modified) is `lock-drift`. With arguments (also under config `lock.frozen`): a bare name the lock holds reinstalls from it, anything else, `--no-lock` and `--digest` fail `lock-frozen: learn <arg> would modify <path>` |
 | `gym train` | Entries with `requested` are skipped: `skip lint: pinned to 1.2.0 (gym learn lint@<new> to change)`. Others upgrade, then the lock entry is rewritten. git/dir/archive entries are not in the registry and are skipped as today |
-| `gym train --frozen` / `lock.frozen: true` | Refuses any change: `lock-frozen: train would modify <path>`; exits 0 only if nothing would change |
-| `gym list --check` | Drift report, exit 1 on any (below) |
+| `gym train --frozen` / `lock.frozen: true` | Refuses any change: `lock-frozen: train would modify <path>`; exits 0 only if nothing would change. `lock.frozen: true` also makes a bare `learn` verify, as `learn --frozen` |
+| `gym list --check` | Drift report, exit 1 on a failing finding (below); JSON `{scope, lock, ok, findings: [{name, status, detail}]}`; lock-missing when there is no lock |
 
 No new verb for restore: `learn` already means "get skills onto this machine"; no-args form matches `npm install`/`bundle install`. Alternative `gym sync`: rejected, an extra verb for one behaviour.
 
 Drift: (1) lock entry, no state record: `missing`; (2) state record, no lock entry: `untracked` (warning only); (3) `state.digest != lock.digest`: `digest-drift`; (4) install dir re-hashed differs from `state.digest`: `modified`. `--frozen` and `--check` fail on 1, 3, 4.
 
-`--strict`: no change to semantics. First install without any pin is `digest-unpinned` warn, a deny under `--strict`; the adoption path is `learn` once (non-strict) then commit the lock, or `learn --digest`. New `admission.require_pin: none|remote|all` (default `none`; project may only raise): `remote` = registry/git/archive sources need a pin from lock, registry, or `--digest`; dir sources exempt. Mechanism as `approval_state` in ADR-0002: fact `digest_status = unpinned-required`, policy `admission-digest-required` (deny), reason `digest-required`.
+`--strict`: no change to semantics. First install without any pin is `digest-unpinned` warn, a deny under `--strict`; the adoption path is `learn` once (non-strict) then commit the lock, or `learn --digest`. New `admission.require_pin: none|remote|all` (default `none`; project may only raise): `remote` = registry/git/archive sources need a pin from lock, registry, or `--digest`; dir sources exempt (until the archive kind exists, `remote` covers registry and git). `all` covers every source. Mechanism as `approval_state` in ADR-0002: fact `digest_status = unpinned-required`, policy `admission-digest-required` (deny), reason `digest-required`. The source kind is the one the caller resolved (`registry` for an index entry, even one whose `source_url` is a local directory).
 
 ### 2.4 ExpectedDigest wiring (closes test case 11)
 
@@ -212,7 +212,7 @@ Drift: (1) lock entry, no state record: `missing`; (2) state record, no lock ent
 func ExpectedDigest(entry registry.SkillEntry, lock *lock.Entry) (digest, source string, conflict bool)
 ```
 
-Order: operator `--digest` > lock entry > registry entry > none. `source` is `operator|lockfile|registry`. `conflict` is true only when lock and registry both pin, differ, and describe the same version (`lock.version == entry.Version`); a registry that moved on to a newer version is not a conflict. On conflict the lock wins, `AdmissionResult.DigestPinConflict = true`, payload `digest_pin_conflict`, new policy `admission-digest-pin-conflict` (warn, reason `digest-pin-conflict`). `AdmissionInput` gains `Lock *lock.Entry`. Mismatch against whichever pin applies stays the hard `digest-mismatch`.
+Order: operator `--digest` > lock entry > registry entry > none. `ExpectedDigest` itself orders lock over registry; `Admit` applies the operator pin (`AdmissionInput.ExpectDigest`) first and then reports no conflict. `source` is `operator|lockfile|registry`. `conflict` is true only when lock and registry both pin, differ, and describe the same version (`lock.version == entry.Version`); a registry that moved on to a newer version is not a conflict. On conflict the lock wins, `AdmissionResult.DigestPinConflict = true`, payload `digest_pin_conflict`, new policy `admission-digest-pin-conflict` (warn, reason `digest-pin-conflict`). `AdmissionInput` gains `Lock *lock.Entry`, `SourceKind`, `Requested` and `Commit`. A lock is passed only when the install honours it (`learn <name>`, restore): a new request (`name@version`, `url#ref`, a train upgrade) is checked against the registry's or the operator's pin, not the old lock's. When honouring a registry entry, the index's digest for the lock's version, if the index holds one, is the registry side of the comparison. Mismatch against whichever pin applies stays the hard `digest-mismatch`.
 
 ### 2.5 Tests (B)
 
@@ -384,7 +384,7 @@ Re-break: D2, D3, D4, D6, D7, D9, D11, D13.
 
 ### Events and payloads
 
-`SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` gain (all `omitempty`, defaulted in guard activation): `folder` (scope root, project scope), `source_kind`, `source_host`, `requested`, `resolved` (commit), `lock_present` (bool), `digest_pin_conflict` (bool). `digest_source` gains `lockfile` and `operator`; `digest_status` gains `unpinned-required`. `SkillInstallCompletedPayload` gains `folder`. New uninstall topics (3.3). `topics_roundtrip_test.go` extended.
+`SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` gain (all `omitempty`, defaulted in guard activation): `folder` (scope root, project scope), `source_kind` (`registry|git|dir` so far), `source_host` (with the sources work), `requested`, `resolved` (commit), `lock_present` (bool: a lock entry was honoured as the pin), `digest_pin_conflict` (bool). `digest_source` gains `lockfile` and `operator`; `digest_status` gains `unpinned-required`. `SkillInstallCompletedPayload` gains `folder`. New uninstall topics (3.3). `topics_roundtrip_test.go` extended.
 
 ### Rejection reasons (stable strings)
 

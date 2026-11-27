@@ -15,8 +15,12 @@ Coaches (registry sources):
 - `--name` = local label for this coach entry; else use `repository.name`; else derive from URL
 
 Learn:
-- by name: `gym learn <skill>`
-- by URL/dir: `gym learn <git-url|file-url|dir>`
+- by name: `gym learn <skill>`; exact version: `gym learn <skill>@<version>`
+- by URL/dir: `gym learn <git-url|file-url|dir>`; pinned ref: `gym learn <git-url>#<branch|tag|commit>`
+- restore from the lock: `gym learn` (no arguments; needs `<root>/.gym/lock.json`); verify only: `gym learn --frozen`
+- operator pin: `gym learn --digest sha256:<hex> <skill|url|dir>`; skip the lock: `--no-lock`
+- a locked name installs the locked source, commit and digest (`using locked <v>`)
+- reasons: `pin-unavailable`, `ref-not-found`, `lock-missing`, `lock-invalid`, `lock-drift`, `lock-frozen`, `lock-source-escapes`, `digest-required`
 - default scope: project install at `CWD/.gym/skills`
 - folder scope elsewhere: `gym learn --dir <folder> …` (not with `-g`)
 - force global: `gym learn --global …` or `gym learn -g …`
@@ -32,17 +36,20 @@ Train:
 - patterns: `gym train "auth-*"`
 - in project with project skills: upgrades project; mirrors global by default; disable: `gym train --no-global`
 - folder scope: `gym train --dir <folder>`; with its nested scopes: `-r [--depth N]`
+- skips skills pinned in the lock (`requested`); `--frozen` or `lock.frozen: true`: exit 1 `lock-frozen` if an upgrade exists
 - compatibility alias: `gym upgrade ...`
 
 Unlearn:
 - remove: `gym unlearn a b`; patterns: `gym unlearn "auth-*" --yes` (non-TTY needs `--yes` for a pattern matching several)
 - preview: `gym unlearn -n a`; global: `-g`; folder scope: `--dir FOLDER` (default CWD, never an ancestor); narrow: `--path`, `--agent`
 - locally edited skill: `skill-modified` until `--force`; absent skill: `skill-not-installed` (`--ignore-missing` => exit 0)
+- removes the skill's lock entry last; `--keep-lock` leaves it
 - aliases: `uninstall`, `remove`, `rm`
 
 List:
 - one scope: `gym list [--dir <folder> | -g] [--format json]`
 - what an agent in a folder sees: `gym list --effective` (nearest wins, shadowed entries marked)
+- drift against the lock: `gym list --check [--dir <folder> | -g] [--format json]` (exit 1 on `missing`, `digest-drift`, `modified`; `untracked` only warns)
 
 Paths:
 - list: `gym paths`
@@ -82,7 +89,7 @@ Event bus (kit/runtime/bus):
 
 Serve:
 - `gym serve --host 127.0.0.1 --port 4873`
-- endpoints: `/skills.json` `/health` `/_index.json`
+- endpoints: `/skills.json` (every version, with `digest`) `/health` `/_index.json`
 
 Files:
 - system cfg: `/etc/gym/config.yaml`
@@ -92,6 +99,7 @@ Files:
 - `-c key=value` / `-c <file>` repeatable; shown in `gym --help-all`
 - global state: `$XDG_STATE_HOME/gym/installed-global.json`
 - project state: `<root>/.gym/installed.json`
+- project/folder lock (commit it): `<root>/.gym/lock.json`; global lock: `<config-dir>/gym/lock.json`
 - index cache: `$XDG_DATA_HOME/gym/registry-index.json`
 - judgement cache: `$XDG_CACHE_HOME/gym/judgements/<sha256>.json`
 - bus state (sqlite): `$XDG_STATE_HOME/gym/bus.sqlite`
