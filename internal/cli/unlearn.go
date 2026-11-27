@@ -43,7 +43,9 @@ type unlearnOptions struct {
 	Yes           bool
 	Force         bool
 	IgnoreMissing bool
-	Patterns      []string
+	// KeepLock leaves the scope's lock entry in place.
+	KeepLock bool
+	Patterns []string
 }
 
 func (a *App) unlearnCobra() *cobra.Command {
@@ -61,6 +63,7 @@ func (a *App) unlearnCobra() *cobra.Command {
 			o.Yes, _ = cmd.Flags().GetBool("yes")
 			o.Force, _ = cmd.Flags().GetBool("force")
 			o.IgnoreMissing, _ = cmd.Flags().GetBool("ignore-missing")
+			o.KeepLock, _ = cmd.Flags().GetBool("keep-lock")
 			o.Patterns = args
 			return a.runUnlearnCtx(cmd.Context(), o)
 		},
@@ -73,6 +76,7 @@ func (a *App) unlearnCobra() *cobra.Command {
 	c.Flags().Bool("force", false, "remove despite local modification")
 	addDirFlag(c)
 	c.Flags().Bool("ignore-missing", false, "absent skill is not an error")
+	c.Flags().Bool("keep-lock", false, "leave the skill's entry in the lock")
 	return c
 }
 
@@ -141,6 +145,9 @@ func (a *App) runUnlearnCtx(ctx context.Context, o unlearnOptions) error {
 			}
 			return state.SaveProject(root, left)
 		},
+		// Last of dir, state, lock: the entry goes once nothing of the skill
+		// remains in the scope.
+		OnSkillGone: a.lockRemover(a.scopeLockOf(rt, scope, root), o.KeepLock),
 	}
 	for _, g := range groups {
 		if o.DryRun {
