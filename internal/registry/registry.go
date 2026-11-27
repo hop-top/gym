@@ -3,15 +3,21 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"hop.top/kit/go/console/progress"
+
+	"hop.top/gym/internal/config"
+	"hop.top/gym/internal/netpolicy"
+	"hop.top/gym/internal/redact"
 )
 
 // Option mutates Refresh behavior. The zero set leaves Refresh silent
@@ -54,6 +60,8 @@ type RepositorySource struct {
 	Name    string
 	URL     string
 	Curated bool
+	// Auth is how to authenticate to URL; nil for none.
+	Auth *config.AuthConfig
 }
 
 // Config controls refresh behavior.
@@ -67,29 +75,65 @@ type Fetcher interface {
 	Fetch(ctx context.Context, url string) ([]byte, error)
 }
 
-// HTTPFetcher fetches registry docs over HTTP(S).
+// SourceFetcher is a Fetcher that can use a source's credentials.
+type SourceFetcher interface {
+	FetchSource(ctx context.Context, src RepositorySource) ([]byte, error)
+}
+
+// HTTPFetcher loads registry docs: over HTTP(S) through the network policy
+// (every request and redirect), or from disk when the location is a plain
+// path or a file:// URL.
 type HTTPFetcher struct {
 	Client *http.Client
 }
 
+// Fetch loads url without credentials.
 func (h HTTPFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
-	client := h.Client
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
+	return h.FetchSource(ctx, RepositorySource{URL: url})
+}
+
+// maxIndexBytes bounds a registry index.
+const maxIndexBytes = 64 << 20
+
+// FetchSource loads src.URL, authenticating with src.Auth when set.
+func (h HTTPFetcher) FetchSource(ctx context.Context, src RepositorySource) ([]byte, error) {
+	loc := src.URL
+	if p, ok := localIndexPath(loc); ok {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil, fmt.Errorf("registry index %s: %w", p, err)
+		}
+		return b, nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+	if !strings.HasPrefix(loc, "http://") && !strings.HasPrefix(loc, "https://") {
+		return nil, fmt.Errorf("registry %s: unsupported location (want https URL, file:// URL or a path)", redact.URL(loc))
 	}
-	resp, err := client.Do(req)
+	if src.Auth != nil {
+		if err := ValidateAuth(src.Auth); err != nil {
+			return nil, err
+		}
+	}
+	resp, err := Get(ctx, h.Client, loc, src.Auth, loc)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("registry fetch %s failed: status %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("registry fetch %s failed: status %d", redact.URL(loc), resp.StatusCode)
 	}
-	return ioReadAll(resp.Body)
+	return ioReadAll(io.LimitReader(resp.Body, maxIndexBytes))
+}
+
+// localIndexPath reports whether loc names a file on disk: a file:// URL
+// or anything that is not a URL.
+func localIndexPath(loc string) (string, bool) {
+	if p, ok := strings.CutPrefix(loc, "file://"); ok {
+		return p, true
+	}
+	if !strings.Contains(loc, "://") {
+		return loc, true
+	}
+	return "", false
 }
 
 // RepositoryMeta mirrors repository-level metadata from skills.json.
@@ -168,6 +212,7 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 	byVersion := map[string]SkillEntry{}
 	oldByName := bestByName(old.Skills)
 
+	var denied []error
 	total := int64(len(cfg.Repositories))
 	for i, src := range cfg.Repositories {
 		current := int64(i + 1)
@@ -178,9 +223,21 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 			Total: total,
 			At:    time.Now().UTC(),
 		})
-		raw, err := fetcher.Fetch(ctx, src.URL)
+		var raw []byte
+		var err error
+		if sf, ok := fetcher.(SourceFetcher); ok {
+			raw, err = sf.FetchSource(ctx, src)
+		} else {
+			raw, err = fetcher.Fetch(ctx, src.URL)
+		}
 		if err != nil {
 			emitDone(ctx, o.reporter, "fetch", src.URL, false)
+			var ne *netpolicy.Error
+			if errors.As(err, &ne) {
+				// Say every repository the policy denies, then fail.
+				denied = append(denied, fmt.Errorf("repository %q: %w", src.Name, err))
+				continue
+			}
 			return Index{}, Report{}, err
 		}
 		emitDone(ctx, o.reporter, "fetch", src.URL, true)
@@ -223,6 +280,9 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts .
 		}
 	}
 
+	if len(denied) > 0 {
+		return Index{}, Report{}, errors.Join(denied...)
+	}
 	for _, s := range byVersion {
 		result.Skills = append(result.Skills, s)
 	}
