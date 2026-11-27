@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/spf13/cobra"
+
 	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/lock"
+	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/state"
 	"hop.top/gym/internal/upgrade"
 )
@@ -95,7 +98,7 @@ func (a *App) recordLock(sl scopeLock, entries []lock.Entry, noLock bool) error 
 // local source is stored as an absolute path.
 func (a *App) warnNotPortable(sl scopeLock, e lock.Entry) {
 	if lock.IsLocalSource(e.Source) && filepath.IsAbs(e.Source) {
-		a.Logger().Warnf("%s: %s is outside %s; the lock stores an absolute path", lock.FindingNotPortable, e.Source, sl.Base)
+		a.Logger().Warnf("%s: %s is outside %s; the lock stores an absolute path that a project lock will not restore from", lock.FindingNotPortable, e.Source, sl.Base)
 	}
 }
 
@@ -200,4 +203,33 @@ func (t *trainLocks) lastEntry(scope, name string) lock.Entry {
 		return e
 	}
 	return lock.Entry{}
+}
+
+// frozenTrainCheck fails with lock-frozen when train would upgrade
+// anything: a frozen lock never changes, so train is a check that exits 0
+// only if nothing would move.
+func frozenTrainCheck(plan []upgrade.PlanItem, idx registry.Index, locks *trainLocks) error {
+	for _, it := range plan {
+		if e, ok := idx.Find(it.Skill.Name); ok && registry.NewerThan(e.Version, it.Skill.Version) {
+			return fmt.Errorf("%s: train would modify %s (%s %s -> %s)", reasonLockFrozen,
+				locks.locs[it.Scope].Path, it.Skill.Name, it.Skill.Version, e.Version)
+		}
+	}
+	return nil
+}
+
+// addLearnLockFlags registers the lock-related flags of `learn`.
+func addLearnLockFlags(c *cobra.Command) {
+	c.Flags().Bool("no-lock", false, "install without reading or writing the lock")
+	c.Flags().Bool("frozen", false, "verify the lock and change nothing; fail with lock-drift on a difference")
+	c.Flags().String("digest", "", "pin the skill to this digest (sha256:<hex>); outranks the lock and the registry")
+}
+
+// learnFlags collects the learn options from the command's flags.
+func learnFlags(cmd *cobra.Command, global bool, pathHint string, agents, tokens []string) learnOpts {
+	o := learnOpts{Global: global, PathHint: pathHint, Agents: agents, Tokens: tokens}
+	o.NoLock, _ = cmd.Flags().GetBool("no-lock")
+	o.Frozen, _ = cmd.Flags().GetBool("frozen")
+	o.Digest, _ = cmd.Flags().GetString("digest")
+	return o
 }

@@ -29,6 +29,8 @@ type trainOpts struct {
 	Recursive bool
 	// Depth bounds the recursive walk, in folder levels below the root.
 	Depth int
+	// Frozen refuses any upgrade (lock-frozen); config lock.frozen does too.
+	Frozen bool
 }
 
 // runTrain is the legacy non-context entry point.
@@ -167,6 +169,11 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		return err
 	}
 	plan, skipped := a.skipPinned(plan, locks)
+	if o.Frozen || rt.Config.Lock.Frozen {
+		if err := frozenTrainCheck(plan, idx, locks); err != nil {
+			return err
+		}
+	}
 	if len(plan) == 0 {
 		if refusedErr == nil && skipped == 0 {
 			a.printlnf("no matching installed skills to train")

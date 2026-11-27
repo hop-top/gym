@@ -34,8 +34,15 @@ func TestB3RegistryPinHitAndMiss(t *testing.T) {
 		t.Fatalf("lint@1.2.0 installed the wrong version:\n%s", got)
 	}
 
-	// Unpinned takes the best.
-	e.mustGym(t, "unlearn", "lint")
+}
+
+// Without a pin, and without a lock entry, learn takes the best version.
+func TestLearnWithoutPinTakesBestVersion(t *testing.T) {
+	e := newLkEnv(t, "")
+	e.index(t,
+		registry.SkillEntry{Name: "lint", Version: "1.2.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "pinned-old")},
+		registry.SkillEntry{Name: "lint", Version: "1.3.0", SourceURL: lkSkillSrc(t, scratchDir(t), "lint", "newest")},
+	)
 	e.mustGym(t, "learn", "lint")
 	if got := lkRead(t, filepath.Join(e.skillDir("lint"), "SKILL.md")); !strings.Contains(got, "newest") {
 		t.Fatalf("plain learn did not take the best version:\n%s", got)
