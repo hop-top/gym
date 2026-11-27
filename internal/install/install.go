@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -446,6 +447,12 @@ func admitStaged(req Request, entry registry.SkillEntry, skillPath string) (Admi
 	})
 }
 
+// skipGitDir skips .git directories below the copy root, the same ones
+// Digest skips.
+func skipGitDir(rel string, d fs.DirEntry) bool {
+	return rel != "." && d.IsDir() && d.Name() == ".git"
+}
+
 func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath config.InstallPath, adm AdmissionResult) (state.InstalledSkill, error) {
 	// A registry-supplied name must not steer the copy or the RemoveAll
 	// out of the install path.
@@ -457,7 +464,9 @@ func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath
 	}
 	dest := filepath.Join(installPath.Path, entry.Name)
 	_ = os.RemoveAll(dest)
-	if err := fsutil.CopyDir(skillPath, dest); err != nil {
+	// .git is skipped by the digest, so it must not be installed either:
+	// installed bytes equal hashed bytes.
+	if err := fsutil.CopyDir(skillPath, dest, skipGitDir); err != nil {
 		return state.InstalledSkill{}, err
 	}
 	// The source may be a live local directory mutated since it was
