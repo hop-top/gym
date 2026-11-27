@@ -92,6 +92,9 @@ func (a *App) newKitRoot() *kitcli.Root {
 	a.theme = root.Theme
 
 	cmd.PersistentPreRunE = func(c *cobra.Command, _ []string) error {
+		if err := a.applyDirFlag(c); err != nil {
+			return err
+		}
 		if err := a.initViper(vp); err != nil {
 			return err
 		}
@@ -178,6 +181,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 		a.updateCobra(),
 		a.learnCobra(vp),
 		a.trainCobra(vp),
+		a.listCobra(),
 		a.coachCobra(),
 		a.pathsCobra(),
 		a.serveCobra(),
@@ -232,6 +236,7 @@ func (a *App) learnCobra(vp *viper.Viper) *cobra.Command {
 			return a.runLearnCtx(cmd.Context(), toGlobal, pathHint, agents, args)
 		},
 	}
+	addDirFlag(c)
 	c.Flags().BoolP("global", "g", false, "install globally (default: install into CWD/.gym)")
 	c.Flags().String("path", "", "install path name/path override")
 	c.Flags().StringArray("agent", nil, "limit install paths by name/path pattern (prefix with ! to exclude)")
@@ -252,9 +257,14 @@ func (a *App) trainCobra(vp *viper.Viper) *cobra.Command {
 			if !cmd.Flags().Changed("no-global") {
 				noGlobal = vp.GetBool("train.no_global")
 			}
-			return a.runTrainCtx(cmd.Context(), noGlobal, args)
+			recursive, _ := cmd.Flags().GetBool("recursive")
+			depth, _ := cmd.Flags().GetInt("depth")
+			return a.runTrainOpts(cmd.Context(), trainOpts{NoGlobal: noGlobal, Patterns: args, Recursive: recursive, Depth: depth})
 		},
 	}
+	addDirFlag(c)
+	c.Flags().BoolP("recursive", "r", false, "also train every folder scope below the scope root")
+	c.Flags().Int("depth", defaultTrainDepth, "with -r: folder levels below the scope root to search")
 	c.Flags().Bool("no-global", false, "do not mirror global upgrades from project upgrades")
 	_ = vp.BindPFlag("train.no_global", c.Flags().Lookup("no-global"))
 	return c
@@ -442,9 +452,12 @@ func (a *App) warmupCobra() *cobra.Command {
 			format, _ := cmd.Flags().GetString("format")
 			scope, _ := cmd.Flags().GetString("scope")
 			out, _ := cmd.Flags().GetString("output")
-			return a.runWarmup(format, scope, out)
+			noInherit, _ := cmd.Flags().GetBool("no-inherit")
+			return a.runWarmup(format, scope, out, noInherit)
 		},
 	}
+	addDirFlag(c)
+	c.Flags().Bool("no-inherit", false, "only the nearest folder scope, not its ancestors")
 	c.Flags().String("format", "xml", "output format: xml, json, agents-md")
 	c.Flags().String("scope", "all", "skill scope: all, global, project")
 	c.Flags().StringP("output", "o", "", "output file (default: stdout)")

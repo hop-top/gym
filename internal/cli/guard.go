@@ -19,8 +19,8 @@ import (
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/install"
-	"hop.top/gym/internal/project"
 	"hop.top/gym/internal/registry"
+	"hop.top/gym/internal/scope"
 	"hop.top/gym/internal/upgrade"
 	"hop.top/gym/internal/xdg"
 )
@@ -60,8 +60,9 @@ func (a *App) gateUnavailable() error {
 // payload.largest_binary_bytes fire on real install metadata, and the
 // admission facts (digest, tools, data class, approval) ride along for
 // the admission-* policies. requestID correlates the requested and
-// rejected events of one attempt.
-func (a *App) installGate(requestID string) install.GateFunc {
+// rejected events of one attempt. folder is the scope root of a project
+// scope install ("" for global).
+func (a *App) installGate(requestID, folder string) install.GateFunc {
 	if a == nil || a.Bus() == nil {
 		return nil
 	}
@@ -75,6 +76,7 @@ func (a *App) installGate(requestID string) install.GateFunc {
 			Version:            entry.Version,
 			SourceURL:          install.RedactURL(entry.SourceURL),
 			Scope:              scope,
+			Folder:             folderOf(scope, folder),
 			Paths:              paths,
 			Postinstall:        scan.Postinstall,
 			ShellHook:          scan.ShellHook,
@@ -105,7 +107,7 @@ func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) erro
 			Source: install.RedactURL(p.Skill.SourceURL),
 		})
 	}
-	payload := events.SkillUpgradePlannedPayload{Items: items}
+	payload := events.SkillUpgradePlannedPayload{Items: items, Folder: planFolder(plan)}
 	return guard.GateUpgrade(ctx, a.Bus(), payload, guard.GateConfig{
 		Logger: a.Logger(),
 	})
@@ -146,14 +148,17 @@ func (a *App) loadGuardEngine() (*guard.Engine, error) {
 	if err == nil {
 		userDir = filepath.Join(dirs.ConfigHome, "policies")
 	}
-	projectDir := ""
-	if root, ok := project.DetectRoot(a.CWD); ok {
-		projectDir = filepath.Join(root, ".gym", "policies")
+	// Every folder scope on the chain contributes its policies, outermost
+	// first. Chain warnings are the config loader's to print.
+	roots := scope.Chain(a.startDir()).Roots
+	var projectDirs []string
+	for i := len(roots) - 1; i >= 0; i-- {
+		projectDirs = append(projectDirs, filepath.Join(roots[i], ".gym", "policies"))
 	}
 	policies, err := guard.Load(guard.LoadOptions{
-		UserDir:    userDir,
-		Logger:     a.Logger(),
-		ProjectDir: projectDir,
+		UserDir:     userDir,
+		Logger:      a.Logger(),
+		ProjectDirs: projectDirs,
 	})
 	if err != nil {
 		return nil, err
@@ -281,4 +286,24 @@ func loadTestPayload(target string) (map[string]any, error) {
 		return nil, fmt.Errorf("parse manifest %s: %w", path, err)
 	}
 	return p, nil
+}
+
+// folderOf is the "folder" payload value for an install: the scope root for
+// project scope, empty for global.
+func folderOf(scope, root string) string {
+	if scope == "project" {
+		return root
+	}
+	return ""
+}
+
+// planFolder is the scope root of the project items of a plan. A plan
+// covers one scope plus the global mirror, so there is at most one.
+func planFolder(plan []upgrade.PlanItem) string {
+	for _, p := range plan {
+		if p.Scope == "project" {
+			return p.Root
+		}
+	}
+	return ""
 }

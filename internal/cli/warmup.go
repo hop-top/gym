@@ -11,31 +11,45 @@ import (
 	"hop.top/gym/internal/warmup"
 )
 
-func (a *App) runWarmup(format, scope, output string) error {
+// runWarmup renders the skills an agent in the command's folder sees: the
+// global scope and, unless noInherit, every scope on the folder chain, the
+// nearest holder of a name winning. noInherit keeps only the nearest scope.
+func (a *App) runWarmup(format, scope, output string, noInherit bool) error {
 	rt, err := a.loadRuntime()
 	if err != nil {
 		return err
 	}
 
-	var allSkills []warmup.SkillInfo
-
-	// Load global skills
-	if scope == "all" || scope == "global" {
-		globalSkills, err := state.LoadGlobal(rt.Dirs.StateHome)
-		if err != nil {
-			return fmt.Errorf("load global skills: %w", err)
-		}
-		allSkills = append(allSkills, warmup.BuildSkillInfo(a.trustedRecords(rt, globalSkills, "global"), "global")...)
+	layers, err := a.skillLayers(rt, scope == "all" || scope == "global", scope == "all" || scope == "project", !noInherit)
+	if err != nil {
+		return err
 	}
-
-	// Load project skills
-	if scope == "all" || scope == "project" {
-		if rt.InProject {
-			projectSkills, err := state.LoadProject(rt.ProjectRoot)
-			if err != nil {
-				return fmt.Errorf("load project skills: %w", err)
+	// Winners only, listed general to specific: global first, then the
+	// outermost folder down to the innermost.
+	var allSkills []warmup.SkillInfo
+	won := map[string]listEntry{}
+	for _, e := range resolveEffective(layers) {
+		if e.ShadowedBy == "" {
+			won[e.Scope+"\x00"+e.Folder+"\x00"+e.Name] = e
+		}
+	}
+	for i := len(layers) - 1; i >= 0; i-- {
+		l := layers[i]
+		var kept []state.InstalledSkill
+		for _, r := range l.Skills {
+			if _, ok := won[l.Scope+"\x00"+l.Folder+"\x00"+r.Name]; ok {
+				kept = append(kept, r)
 			}
-			allSkills = append(allSkills, warmup.BuildSkillInfo(a.trustedRecords(rt, projectSkills, "project"), "project")...)
+		}
+		infos := warmup.BuildSkillInfo(kept, l.Scope)
+		for k := range infos {
+			infos[k].Folder = l.Folder
+			infos[k].Depth = l.Depth
+		}
+		if l.Scope == "global" {
+			allSkills = append(infos, allSkills...)
+		} else {
+			allSkills = append(allSkills, infos...)
 		}
 	}
 

@@ -171,25 +171,51 @@ func TestProjectConfig_InstallPathsMustStayInTree(t *testing.T) {
 	}
 }
 
-func TestProjectConfig_RelativeInstallPathResolvesAgainstProjectRoot(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "")
-	proj := scratchDir(t)
-	writeFiles(t, proj, map[string]string{
-		".gym/config.yaml": "install_paths:\n  - {name: x, path: .agent/skills, scope: project}\n",
-		"sub/keep":         "",
+// A relative folder install path resolves against the scope root: the
+// folder `learn` installs into, not the folder that wrote the config and not
+// a subfolder the command happens to run from.
+func TestProjectConfig_RelativeInstallPathResolvesAgainstScopeRoot(t *testing.T) {
+	setup := func(t *testing.T) (proj string) {
+		home := isolate(t)
+		writeUserConfig(t, home, "")
+		proj = scratchDir(t)
+		writeFiles(t, proj, map[string]string{
+			".gym/config.yaml": "install_paths:\n  - {name: x, path: .agent/skills, scope: project}\n",
+			"sub/keep":         "",
+		})
+		return proj
+	}
+
+	t.Run("default root is the working directory", func(t *testing.T) {
+		proj := setup(t)
+		sub := filepath.Join(proj, "sub")
+		code, _, errs := runGym(t, sub, "learn", hostileSkill(t, "demo", "1"))
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errs)
+		}
+		if !installed(filepath.Join(sub, ".agent", "skills"), "demo") {
+			t.Fatal("not installed under the scope root (the working directory)")
+		}
+		if exists(filepath.Join(proj, ".agent")) {
+			t.Fatal("installed into the ancestor's tree")
+		}
+		if strings.Contains(errs, "escapes") {
+			t.Fatalf("in-tree path warned:\n%s", errs)
+		}
 	})
-	code, _, errs := runGym(t, filepath.Join(proj, "sub"), "learn", hostileSkill(t, "demo", "1"))
-	if code != 0 {
-		t.Fatalf("exit %d: %s", code, errs)
-	}
-	if !installed(filepath.Join(proj, ".agent", "skills"), "demo") {
-		t.Fatal("not installed under the project root")
-	}
-	if exists(filepath.Join(proj, "sub", ".agent")) {
-		t.Fatal("resolved against the working directory")
-	}
-	if strings.Contains(errs, "escapes") {
-		t.Fatalf("in-tree path warned:\n%s", errs)
-	}
+
+	t.Run("--dir names the scope root", func(t *testing.T) {
+		proj := setup(t)
+		sub := filepath.Join(proj, "sub")
+		code, _, errs := runGym(t, sub, "learn", "--dir", proj, hostileSkill(t, "demo", "1"))
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errs)
+		}
+		if !installed(filepath.Join(proj, ".agent", "skills"), "demo") {
+			t.Fatal("not installed under the project root")
+		}
+		if exists(filepath.Join(sub, ".agent")) {
+			t.Fatal("resolved against the working directory")
+		}
+	})
 }

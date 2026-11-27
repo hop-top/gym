@@ -13,14 +13,18 @@ type Input struct {
 	MirrorGlobal        bool
 	NoGlobal            bool
 	Patterns            []string
-	ProjectSkills       []state.InstalledSkill
-	GlobalSkills        []state.InstalledSkill
+	// ProjectRoot is the scope root of ProjectSkills.
+	ProjectRoot   string
+	ProjectSkills []state.InstalledSkill
+	GlobalSkills  []state.InstalledSkill
 }
 
 // PlanItem is a single skill upgrade operation.
 type PlanItem struct {
 	Skill state.InstalledSkill
 	Scope string // project|global
+	// Root is the scope root a project item belongs to; "" for global.
+	Root string
 }
 
 func matchesAny(name string, patterns []string) bool {
@@ -47,7 +51,7 @@ func Plan(in Input) []PlanItem {
 	if in.InProjectWithSkills {
 		for _, s := range in.ProjectSkills {
 			if matchesAny(s.Name, in.Patterns) {
-				items = append(items, PlanItem{Skill: s, Scope: "project"})
+				items = append(items, PlanItem{Skill: s, Scope: "project", Root: in.ProjectRoot})
 				projectChosen[s.Name] = true
 			}
 		}
