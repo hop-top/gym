@@ -16,13 +16,15 @@ func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 	if err := os.MkdirAll(userCfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	userConfig := `{
-		"repositories": [{"name": "curated", "url": "https://example.com/curated.json", "curated": true}],
-		"install_paths": [{"name": "claude-global", "path": "~/.claude/skills", "scope": "global"}],
-		"curation": {"min_stars": 100},
-		"validator": {"command": ["skills-ref", "test", "{path}"], "timeout_seconds": 15}
-	}`
-	if err := os.WriteFile(filepath.Join(userCfgDir, "config.json"), []byte(userConfig), 0o644); err != nil {
+	userConfig := `
+repositories:
+  - {name: curated, url: "https://example.com/curated.json", curated: true}
+install_paths:
+  - {name: claude-global, path: "~/.claude/skills", scope: global}
+curation: {min_stars: 100}
+validator: {command: [skills-ref, test, "{path}"], timeout_seconds: 15}
+`
+	if err := os.WriteFile(filepath.Join(userCfgDir, "config.yaml"), []byte(userConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -30,11 +32,12 @@ func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 	if err := os.MkdirAll(projCfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	projectConfig := `{
-		"install_paths": [{"name": "claude-local", "path": ".claude/skills", "scope": "project"}],
-		"upgrade": {"mirror_global_from_project": false}
-	}`
-	if err := os.WriteFile(filepath.Join(projCfgDir, "config.json"), []byte(projectConfig), 0o644); err != nil {
+	projectConfig := `
+install_paths:
+  - {name: claude-local, path: .claude/skills, scope: project}
+upgrade: {mirror_global_from_project: false}
+`
+	if err := os.WriteFile(filepath.Join(projCfgDir, "config.yaml"), []byte(projectConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -43,15 +46,20 @@ func TestLoadMergedConfig_UserAndProjectHierarchy(t *testing.T) {
 	// test relies on the user config landing under <home>/.config/gym/.
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
-	cfg, src, err := config.LoadMergedConfig(projectRoot)
+	cfg, err := config.LoadMergedConfig(projectRoot, nil, nil)
 	if err != nil {
 		t.Fatalf("LoadMergedConfig() error = %v", err)
 	}
-	if !src.HasUser || !src.HasProject {
-		t.Fatalf("LoadMergedConfig() source = %#v, want user+project", src)
+	// Lists follow kit's layering: a later layer replaces the earlier
+	// list instead of appending to it.
+	if len(cfg.InstallPaths) != 1 || cfg.InstallPaths[0].Name != "claude-local" {
+		t.Fatalf("InstallPaths = %#v, want project list only", cfg.InstallPaths)
 	}
-	if len(cfg.InstallPaths) != 2 {
-		t.Fatalf("InstallPaths len = %d, want 2", len(cfg.InstallPaths))
+	if len(cfg.Repositories) != 1 || cfg.Repositories[0].Name != "curated" {
+		t.Fatalf("Repositories = %#v, want user list (project sets none)", cfg.Repositories)
+	}
+	if cfg.Validator.TimeoutSeconds != 15 {
+		t.Fatalf("TimeoutSeconds = %d, want 15 (user)", cfg.Validator.TimeoutSeconds)
 	}
 	if cfg.Upgrade.MirrorGlobalFromProject {
 		t.Fatalf("MirrorGlobalFromProject = true, want false (project override)")

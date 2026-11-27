@@ -26,7 +26,7 @@ func TestAddInstallPathUserWritesToXDGConfig(t *testing.T) {
 		t.Fatalf("config file not written: %v", err)
 	}
 
-	cfg, _, err := config.LoadMergedConfig(cwd)
+	cfg, err := config.LoadMergedConfig(cwd, nil, nil)
 	if err != nil {
 		t.Fatalf("LoadMergedConfig() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestAddInstallPathProjectWritesToProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddInstallPath() error = %v", err)
 	}
-	if want := filepath.Join(root, ".gym", "config.json"); cfgPath != want {
+	if want := filepath.Join(root, ".gym", "config.yaml"); cfgPath != want {
 		t.Fatalf("cfgPath = %q, want %q", cfgPath, want)
 	}
 	if _, err := os.Stat(cfgPath); err != nil {

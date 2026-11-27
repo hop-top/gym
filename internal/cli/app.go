@@ -52,6 +52,11 @@ type App struct {
 	// PersistentPreRunE. Subsequent commands reuse the same handle.
 	bus *eventbus.Bus
 
+	// cfgPaths and cfgOverrides are the extra config files and key=value
+	// overrides parsed from -c/--config by PersistentPreRunE.
+	cfgPaths     []string
+	cfgOverrides map[string]any
+
 	// cheatRegistryHandle is the long-lived registry used by the
 	// optional GYM_TIP_BUS_BRIDGE subscriber. Lazy: built once per
 	// process inside PersistentPreRunE.
@@ -102,7 +107,6 @@ func (a *App) Bus() *eventbus.Bus { return a.bus }
 type runtime struct {
 	Dirs        xdg.Dirs
 	Config      config.Config
-	Source      config.Source
 	ProjectRoot string
 	InProject   bool
 }
@@ -115,12 +119,12 @@ func (a *App) loadRuntime() (runtime, error) {
 	if err := xdg.Ensure(dirs); err != nil {
 		return runtime{}, err
 	}
-	cfg, src, err := config.LoadMergedConfig(a.CWD)
+	cfg, err := config.LoadMergedConfig(a.CWD, a.cfgPaths, a.cfgOverrides)
 	if err != nil {
 		return runtime{}, err
 	}
 	root, ok := project.DetectRoot(a.CWD)
-	return runtime{Dirs: dirs, Config: cfg, Source: src, ProjectRoot: root, InProject: ok}, nil
+	return runtime{Dirs: dirs, Config: cfg, ProjectRoot: root, InProject: ok}, nil
 }
 
 func (a *App) printlnf(format string, args ...any) {
