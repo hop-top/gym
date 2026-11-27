@@ -147,6 +147,26 @@ Policy denies surface as `guard.PolicyDenyError` (`errors.Is(err, guard.ErrPolic
 
 Deny-severity findings pick the reason (warn findings only under `--strict`, when no deny finding exists); among them an `admission-*` rule wins, else the first finding. Gate timeout under `--strict` denies without findings and publishes nothing.
 
+### Uninstall (`gym unlearn`)
+
+Implementation: `internal/cli/unlearn.go` (command, matching, confirmation, events), `internal/install/remove.go` (`Remover`), `internal/fsutil/atomic.go` (state writes). Every directory is deleted by `Remover.RemoveSkill` only after `install.CheckRecordPath` accepts the record; there is no other deletion path. Order per record: validate, modified check (re-hash vs `state.digest`), `RemoveAll` of the validated path (already absent counts as removed), then the record leaves `installed.json` by atomic write. `Remover.OnSkillGone(name)` fires once when no record of the skill remains in the scope: the hook for lock-entry removal.
+
+| Topic | Payload |
+|-------|---------|
+| `gym.skill.uninstall.requested` | `{skill, scope, folder, paths, request_id}` |
+| `gym.skill.uninstall.completed` | `{skill, scope, folder, paths, request_id}` |
+| `gym.skill.uninstall.failed` | `{skill, scope, reason, request_id}` |
+
+One `request_id` per skill attempt. Informational: the guard does not gate uninstall, `path-allowlist` is not consulted, and `--dry-run` publishes nothing. `folder` is the scope root (empty for global). `failed.reason` is the first failure of the skill.
+
+| Reason | Cause |
+|--------|-------|
+| `skill-not-installed` | no record matches (exit 1; `--ignore-missing` exit 0) |
+| `install-path-untrusted` | record `install_path` fails `CheckRecordPath`; record and directory untouched |
+| `skill-modified` | directory differs from recorded digest, or no digest recorded, or cannot be hashed; `--force` |
+| `confirmation-required` | glob matched more than one skill, no TTY, no `--yes` |
+| `remove-failed` | I/O error removing the directory or writing state; record kept |
+
 ### Install-requested admission fields
 
 Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `omitempty`; guard defaults every key in the CEL activation):

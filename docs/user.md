@@ -165,6 +165,25 @@ Target selection:
 - filter with `--agent` patterns (prefix with `!` to exclude)
 - override a single path with `--path NAME_OR_PATH`
 
+### Unlearn
+
+```bash
+gym unlearn lint
+gym unlearn 'auth-*' --yes
+gym unlearn lint -g --dry-run
+```
+
+- aliases: `gym uninstall`, `gym remove`, `gym rm`
+- needs at least one name or pattern (`filepath.Match`, as `train`); removing everything takes an explicit `'*'`
+- scope and targets as `learn`: project by default (`CWD/.gym`), `--global`/`-g`; `--path NAME_OR_PATH`, `--agent` patterns (prefix `!` excludes) pick the install paths to remove from
+- `-n/--dry-run` prints `would remove <skill> <dir>` lines and changes nothing
+- an explicit name never prompts; a pattern matching more than one skill asks `remove N skills from <root>? [y/N]` on a terminal, and without one fails with `confirmation-required: pattern matched N skills; pass --yes`. `-y/--yes` skips the prompt
+- per install directory, in order: the record's `install_path` must pass the state trust check (`install-path-untrusted: <path>`, the directory is never touched); the directory is re-hashed against the digest recorded at install, and a difference fails with `skill-modified: <dir> differs from recorded <digest>; --force to remove` (a record with no digest cannot be verified and needs `--force` too); the directory is removed; then its record is dropped from `installed.json`, which stays even with an empty list
+- `--force` removes despite local modification; it never relaxes the trust check
+- a skill that is not installed fails with `skill-not-installed: <name> in <root>`, plus `(installed in: global)` when the other scope has it; `--ignore-missing` makes that exit 0
+- a failure does not stop the other records or skills; failed records stay in `installed.json`, each failure is printed, exit is 1. A rerun is safe
+- kept: approvals, config, the registry index
+
 ### Train
 
 ```bash

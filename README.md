@@ -37,9 +37,11 @@ gym version
 gym update
 gym learn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] <skill-or-url> [...]
 gym train [--dir FOLDER] [--recursive|-r [--depth N]] [--no-global] [pattern ...]
+gym unlearn [--global|-g] [--path NAME_OR_PATH] [--agent PATTERN ...] [-n|--dry-run] [-y|--yes] [--force] [--ignore-missing] <name|pattern> [...]
 gym list [--global|-g | --dir FOLDER] [--effective] [--format json]
 gym install ...  # alias of learn
 gym upgrade ...  # alias of train
+gym uninstall|remove|rm ...  # aliases of unlearn
 gym warmup [--format xml|json|agents-md] [--scope all|global|project] [--dir FOLDER] [--no-inherit] [-o FILE]
 gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
 gym coach list
