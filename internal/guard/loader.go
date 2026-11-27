@@ -40,6 +40,9 @@ type rawOverrides struct {
 type LoadOptions struct {
 	UserDir    string // typically $XDG_CONFIG_HOME/gym/policies
 	ProjectDir string // typically <root>/.gym/policies
+	// ProjectDirs are the .gym/policies dirs of a folder-scope chain,
+	// outermost first. They apply in that order, then ProjectDir.
+	ProjectDirs []string
 	// Logger receives one warning per ignored project entry. May be nil.
 	Logger *charmlog.Logger
 }
@@ -53,9 +56,11 @@ type LoadOptions struct {
 //  1. baked-in defaults (one .yaml per policy under policies/)
 //  2. user dir (.yaml redefines existing names; new files add policies;
 //     policies.yaml applies disable/relax to the accumulated set)
-//  3. project dir: new-name .yaml files add policies; a file whose
-//     policy name collides with a built-in or user policy is ignored;
-//     policies.yaml disable/relax apply only to project-defined names.
+//  3. project dirs, outermost first: new-name .yaml files add policies; a
+//     file whose policy name collides with a built-in, user or outer
+//     folder's policy is ignored (the outermost definition wins);
+//     policies.yaml disable/relax apply only to names defined by that
+//     same dir.
 func Load(opts LoadOptions) ([]Policy, error) {
 	policies, err := loadBuiltins()
 	if err != nil {
@@ -75,41 +80,59 @@ func Load(opts LoadOptions) ([]Policy, error) {
 		}
 	}
 
+	dirs := append([]string(nil), opts.ProjectDirs...)
 	if opts.ProjectDir != "" {
-		extra, err := loadDir(opts.ProjectDir)
+		dirs = append(dirs, opts.ProjectDir)
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		var err error
+		policies, err = loadProjectDir(policies, dir, opts.Logger)
 		if err != nil {
-			return nil, fmt.Errorf("guard: project overrides: %w", err)
-		}
-		trusted := map[string]bool{}
-		for _, p := range policies {
-			trusted[p.Name] = true
-		}
-		own := map[string]bool{}
-		var add []Policy
-		for _, p := range extra {
-			if trusted[p.Name] {
-				warnf(opts.Logger, "guard: ignoring project policy %q (%s): would redefine built-in/user policy", p.Name, p.Source)
-				continue
-			}
-			own[p.Name] = true
-			add = append(add, p)
-		}
-		policies = mergePolicies(policies, add)
-		if ov, ok, err := loadOverrides(opts.ProjectDir); err != nil {
-			return nil, fmt.Errorf("guard: project policies.yaml: %w", err)
-		} else if ok {
-			path := filepath.Join(opts.ProjectDir, "policies.yaml")
-			policies = applyOverrides(policies, ov, func(kind, name string) bool {
-				if own[name] {
-					return true
-				}
-				warnf(opts.Logger, "guard: ignoring project %s %q (%s): policy is not project-defined", kind, name, path)
-				return false
-			})
+			return nil, err
 		}
 	}
 
 	sort.SliceStable(policies, func(i, j int) bool { return policies[i].Name < policies[j].Name })
+	return policies, nil
+}
+
+// loadProjectDir applies one folder's policy dir on top of policies. The
+// dir is repository content: it adds new names only.
+func loadProjectDir(policies []Policy, dir string, logger *charmlog.Logger) ([]Policy, error) {
+	extra, err := loadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("guard: project overrides: %w", err)
+	}
+	trusted := map[string]bool{}
+	for _, p := range policies {
+		trusted[p.Name] = true
+	}
+	own := map[string]bool{}
+	var add []Policy
+	for _, p := range extra {
+		if trusted[p.Name] {
+			warnf(logger, "guard: ignoring project policy %q (%s): would redefine built-in/user policy", p.Name, p.Source)
+			continue
+		}
+		own[p.Name] = true
+		add = append(add, p)
+	}
+	policies = mergePolicies(policies, add)
+	if ov, ok, err := loadOverrides(dir); err != nil {
+		return nil, fmt.Errorf("guard: project policies.yaml: %w", err)
+	} else if ok {
+		path := filepath.Join(dir, "policies.yaml")
+		policies = applyOverrides(policies, ov, func(kind, name string) bool {
+			if own[name] {
+				return true
+			}
+			warnf(logger, "guard: ignoring project %s %q (%s): policy is not project-defined", kind, name, path)
+			return false
+		})
+	}
 	return policies, nil
 }
 
