@@ -135,6 +135,7 @@ func (a *App) loadGuardEngine() (*guard.Engine, error) {
 	}
 	policies, err := guard.Load(guard.LoadOptions{
 		UserDir:    userDir,
+		Logger:     a.Logger(),
 		ProjectDir: projectDir,
 	})
 	if err != nil {

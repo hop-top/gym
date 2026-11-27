@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	charmlog "charm.land/log/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,16 +40,22 @@ type rawOverrides struct {
 type LoadOptions struct {
 	UserDir    string // typically $XDG_CONFIG_HOME/gym/policies
 	ProjectDir string // typically <root>/.gym/policies
+	// Logger receives one warning per ignored project entry. May be nil.
+	Logger *charmlog.Logger
 }
 
 // Load reads built-in policies, then user and project overrides, and
-// returns the effective policy set. Override precedence:
+// returns the effective policy set. Trust model: the user dir is the
+// operator's and may redefine, disable or relax anything. The project
+// dir is repository content and may only add policies; entries that
+// would weaken a built-in or user policy are ignored with a warning:
 //
 //  1. baked-in defaults (one .yaml per policy under policies/)
-//  2. user dir (.yaml redefines existing names; new files add policies)
-//  3. project dir (same rules as user; project wins on conflict)
-//  4. policies.yaml in user/project dir applies disable/relax to the
-//     accumulated set.
+//  2. user dir (.yaml redefines existing names; new files add policies;
+//     policies.yaml applies disable/relax to the accumulated set)
+//  3. project dir: new-name .yaml files add policies; a file whose
+//     policy name collides with a built-in or user policy is ignored;
+//     policies.yaml disable/relax apply only to project-defined names.
 func Load(opts LoadOptions) ([]Policy, error) {
 	policies, err := loadBuiltins()
 	if err != nil {
@@ -64,7 +71,7 @@ func Load(opts LoadOptions) ([]Policy, error) {
 		if ov, ok, err := loadOverrides(opts.UserDir); err != nil {
 			return nil, fmt.Errorf("guard: user policies.yaml: %w", err)
 		} else if ok {
-			policies = applyOverrides(policies, ov)
+			policies = applyOverrides(policies, ov, nil)
 		}
 	}
 
@@ -73,16 +80,43 @@ func Load(opts LoadOptions) ([]Policy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("guard: project overrides: %w", err)
 		}
-		policies = mergePolicies(policies, extra)
+		trusted := map[string]bool{}
+		for _, p := range policies {
+			trusted[p.Name] = true
+		}
+		own := map[string]bool{}
+		var add []Policy
+		for _, p := range extra {
+			if trusted[p.Name] {
+				warnf(opts.Logger, "guard: ignoring project policy %q (%s): would redefine built-in/user policy", p.Name, p.Source)
+				continue
+			}
+			own[p.Name] = true
+			add = append(add, p)
+		}
+		policies = mergePolicies(policies, add)
 		if ov, ok, err := loadOverrides(opts.ProjectDir); err != nil {
 			return nil, fmt.Errorf("guard: project policies.yaml: %w", err)
 		} else if ok {
-			policies = applyOverrides(policies, ov)
+			path := filepath.Join(opts.ProjectDir, "policies.yaml")
+			policies = applyOverrides(policies, ov, func(kind, name string) bool {
+				if own[name] {
+					return true
+				}
+				warnf(opts.Logger, "guard: ignoring project %s %q (%s): policy is not project-defined", kind, name, path)
+				return false
+			})
 		}
 	}
 
 	sort.SliceStable(policies, func(i, j int) bool { return policies[i].Name < policies[j].Name })
 	return policies, nil
+}
+
+func warnf(l *charmlog.Logger, format string, args ...any) {
+	if l != nil {
+		l.Warnf(format, args...)
+	}
 }
 
 func loadBuiltins() ([]Policy, error) {
@@ -236,14 +270,23 @@ func loadOverrides(dir string) (rawOverrides, bool, error) {
 	return ov, true, nil
 }
 
-func applyOverrides(policies []Policy, ov rawOverrides) []Policy {
+// applyOverrides applies disable/relax. allow, when non-nil, is asked
+// per entry (kind "disable" or "relax") and may veto it.
+func applyOverrides(policies []Policy, ov rawOverrides, allow func(kind, name string) bool) []Policy {
+	ok := func(kind, name string) bool { return allow == nil || allow(kind, name) }
 	disabled := map[string]bool{}
 	for _, n := range ov.Disable {
-		disabled[strings.TrimSpace(n)] = true
+		n = strings.TrimSpace(n)
+		if ok("disable", n) {
+			disabled[n] = true
+		}
 	}
 	relaxed := map[string]bool{}
 	for _, n := range ov.Relax {
-		relaxed[strings.TrimSpace(n)] = true
+		n = strings.TrimSpace(n)
+		if ok("relax", n) {
+			relaxed[n] = true
+		}
 	}
 	out := make([]Policy, 0, len(policies))
 	for _, p := range policies {
