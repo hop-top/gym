@@ -34,6 +34,12 @@ Train:
 - folder scope: `gym train --dir <folder>`; with its nested scopes: `-r [--depth N]`
 - compatibility alias: `gym upgrade ...`
 
+Unlearn:
+- remove: `gym unlearn a b`; patterns: `gym unlearn "auth-*" --yes` (non-TTY needs `--yes` for a pattern matching several)
+- preview: `gym unlearn -n a`; global: `-g`; narrow: `--path`, `--agent`
+- locally edited skill: `skill-modified` until `--force`; absent skill: `skill-not-installed` (`--ignore-missing` => exit 0)
+- aliases: `uninstall`, `remove`, `rm`
+
 List:
 - one scope: `gym list [--dir <folder> | -g] [--format json]`
 - what an agent in a folder sees: `gym list --effective` (nearest wins, shadowed entries marked)
