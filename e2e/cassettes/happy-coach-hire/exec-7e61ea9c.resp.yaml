@@ -1,0 +1,18 @@
+xrr: "1"
+adapter: exec
+fingerprint: 7e61ea9c
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  stdout: |
+    {
+      "repo": {"owner":"foo","name":"happy","url":"https://github.com/foo/happy"},
+      "scores": {"overall": 8.5},
+      "policy": {"profile":"balanced","passed":true,"exit_code":0},
+      "evidence": [
+        {"type":"github","key":"stars","value":"4200","source":"github/repos","confidence":1.0},
+        {"type":"github","key":"contributors","value":"38","source":"github/repos","confidence":1.0}
+      ],
+      "summary": {"deterministic":"green","recommendation":""}
+    }
+  stderr: ""
+  exit_code: 0

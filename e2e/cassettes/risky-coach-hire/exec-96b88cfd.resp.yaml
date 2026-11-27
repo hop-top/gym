@@ -1,0 +1,14 @@
+xrr: "1"
+adapter: exec
+fingerprint: 96b88cfd
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  stdout: |
+    {
+      "repo": {"owner":"foo","name":"risky","url":"https://github.com/foo/risky"},
+      "scores": {"overall": 2.5},
+      "policy": {"profile":"balanced","passed":false,"exit_code":1},
+      "summary": {"deterministic":"red","recommendation":"High-risk candidate. Prefer alternatives unless essential."}
+    }
+  stderr: ""
+  exit_code: 0

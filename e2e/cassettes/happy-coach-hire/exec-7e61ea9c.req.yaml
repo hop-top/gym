@@ -1,0 +1,11 @@
+xrr: "1"
+adapter: exec
+fingerprint: 7e61ea9c
+recorded_at: "2026-05-05T00:00:00Z"
+payload:
+  argv:
+    - rsx
+    - analyze
+    - github.com/foo/happy
+    - --json
+  stdin: ""
