@@ -129,7 +129,16 @@ func TestMutationAdoptsLegacy(t *testing.T) {
 				dir = filepath.Join(cwd, ".gym")
 			}
 			legacy := filepath.Join(dir, "config.json")
-			put(t, legacy, legacyJSON)
+			// A project file may only name install paths inside its tree.
+			legacyBody, wantPath := legacyJSON, "/old/skills"
+			if target == "project" {
+				legacyBody = `{
+  "curation": {"min_stars": 7},
+  "install_paths": [{"name": "old", "path": "old/skills", "scope": "project"}]
+}`
+				wantPath = filepath.Join(cwd, "old", "skills")
+			}
+			put(t, legacy, legacyBody)
 
 			path, err := config.AddRepository(cwd, target, config.RepositoryConfig{Name: "r", URL: "https://example.com/r"})
 			if err != nil {
@@ -138,14 +147,14 @@ func TestMutationAdoptsLegacy(t *testing.T) {
 			if want := filepath.Join(dir, "config.yaml"); path != want {
 				t.Fatalf("wrote %q, want %q", path, want)
 			}
-			if got, _ := os.ReadFile(legacy); !bytes.Equal(got, []byte(legacyJSON)) {
+			if got, _ := os.ReadFile(legacy); !bytes.Equal(got, []byte(legacyBody)) {
 				t.Fatalf("legacy file changed: %q", got)
 			}
 			cfg, err := config.LoadMergedConfig(cwd, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.Curation.MinStars != 7 || len(cfg.InstallPaths) != 1 || cfg.InstallPaths[0].Path != "/old/skills" {
+			if cfg.Curation.MinStars != 7 || len(cfg.InstallPaths) != 1 || cfg.InstallPaths[0].Path != wantPath {
 				t.Fatalf("old settings lost: %#v", cfg)
 			}
 			if len(cfg.Repositories) != 1 || cfg.Repositories[0].Name != "r" {

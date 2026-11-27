@@ -58,7 +58,7 @@ func TestConfigFlag_ExtraFileLayersAfterDiscovered(t *testing.T) {
 	write(t, filepath.Join(home, "cfg", "gym", "config.yaml"),
 		"install_paths:\n  - {name: fromuser, path: /u, scope: global}\n")
 	write(t, filepath.Join(cwd, ".gym", "config.yaml"),
-		"install_paths:\n  - {name: fromproject, path: /p, scope: global}\n")
+		"install_paths:\n  - {name: fromproject, path: p, scope: project}\n")
 
 	// Discovered only: project wins over user.
 	out, errs, code := runGymCfg(t, cwd, "paths")

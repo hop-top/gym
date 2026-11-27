@@ -20,7 +20,7 @@ func TestPaths_PreviousLayoutStillRead(t *testing.T) {
 	write(t, filepath.Join(home, ".config", "gym", "config.json"),
 		`{"install_paths":[{"name":"fromuser","path":"/u","scope":"global"}]}`)
 	write(t, filepath.Join(cwd, ".gym", "config.json"),
-		`{"install_paths":[{"name":"fromproject","path":"/p","scope":"global"}]}`)
+		`{"install_paths":[{"name":"fromproject","path":"p","scope":"project"}]}`)
 
 	out, errs, code := runGymCfg(t, cwd, "paths")
 	if code != 0 {
@@ -30,7 +30,7 @@ func TestPaths_PreviousLayoutStillRead(t *testing.T) {
 		t.Fatalf("legacy config ignored:\n%s", out)
 	}
 	// project layer replaces user list; assert the layered winner is read.
-	if !strings.Contains(out, "fromproject [global] /p") {
+	if !strings.Contains(out, "fromproject [project] "+filepath.Join(cwd, "p")) {
 		t.Fatalf("project config.json not read:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config", "gym", "config.yaml")); err == nil {

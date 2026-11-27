@@ -124,9 +124,12 @@ func (a *App) loadRuntime() (runtime, error) {
 	if err := xdg.Ensure(dirs); err != nil {
 		return runtime{}, err
 	}
-	cfg, err := config.LoadMergedConfig(a.CWD, a.cfgPaths, a.cfgOverrides)
+	cfg, warns, err := config.LoadMergedConfigWarn(a.CWD, a.cfgPaths, a.cfgOverrides)
 	if err != nil {
 		return runtime{}, err
+	}
+	for _, w := range warns {
+		a.Logger().Warn(w)
 	}
 	a.applyAdmissionFlags(&cfg)
 	root, ok := project.DetectRoot(a.CWD)
