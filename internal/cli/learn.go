@@ -102,9 +102,17 @@ func (a *App) learnTokens(ctx context.Context, o learnOpts, ls learnScope, froze
 		// A frozen lock never changes: only entries it already holds may be
 		// (re)installed, by bare name.
 		for _, tok := range o.Tokens {
-			if _, ok := lf.Find(tok); !ok || !isBareName(tok) {
-				return fmt.Errorf("%s: learn %s would modify %s", reasonLockFrozen, tok, sl.Path)
+			if _, ok := lf.Find(tok); ok && isBareName(tok) {
+				continue
 			}
+			if outOfTreeDir(sl, scope, tok) {
+				// Never locked, so no lock change is attempted, unless an
+				// entry of that name would have to go.
+				if _, ok := lf.Find(inferNameFromToken(tok)); !ok {
+					continue
+				}
+			}
+			return fmt.Errorf("%s: learn %s would modify %s", reasonLockFrozen, tok, sl.Path)
 		}
 	}
 

@@ -243,7 +243,7 @@ func TestFrozenRefusesLockBypassAndChanges(t *testing.T) {
 	if code, _, errs := e.gym(t, "learn", "--no-lock", "lint"); code != 1 || !strings.Contains(errs, "lock-frozen") {
 		t.Fatalf("--no-lock under frozen: exit %d\n%s", code, errs)
 	}
-	other := lkSkillSrc(t, scratchDir(t), "other", "x")
+	other := lkSkillSrc(t, filepath.Join(e.proj, "src"), "other", "x")
 	code, _, errs := e.gym(t, "learn", other)
 	if code != 1 || !strings.Contains(errs, "lock-frozen: learn "+other+" would modify "+e.lockPath()) {
 		t.Fatalf("new skill under frozen: exit %d\n%s", code, errs)
@@ -272,7 +272,7 @@ func TestFrozenRefusesLockBypassAndChanges(t *testing.T) {
 func TestFrozenFromProjectConfig(t *testing.T) {
 	e, _ := lkLocked(t, "")
 	writeFiles(t, e.proj, map[string]string{".gym/config.yaml": "lock:\n  frozen: true\n"})
-	code, _, errs := e.gym(t, "learn", lkSkillSrc(t, scratchDir(t), "other", "x"))
+	code, _, errs := e.gym(t, "learn", lkSkillSrc(t, filepath.Join(e.proj, "src"), "other", "x"))
 	if code != 1 || !strings.Contains(errs, "lock-frozen") {
 		t.Fatalf("exit %d\n%s", code, errs)
 	}

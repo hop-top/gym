@@ -231,7 +231,6 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		upgradedCount++
 		locks.replace(item.Scope, a.lockEntryFor(locks.locs[item.Scope],
 			learnTarget{Entry: entry, Kind: lock.KindRegistry}, installed, outcome.Commit))
-		a.warnNotPortable(locks.locs[item.Scope], locks.lastEntry(item.Scope, item.Skill.Name))
 		a.printlnf("upgraded %s (%s): %s -> %s", item.Skill.Name, item.Scope, item.Skill.Version, installed.Version)
 
 		if item.Scope == "global" {

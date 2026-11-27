@@ -109,7 +109,7 @@ func TestUnlearnDirEditsThatFoldersLock(t *testing.T) {
 	e, _ := lkLocked(t, "")
 	other := filepath.Join(scratchDir(t), "other")
 	scopeTree(t, other)
-	e.mustGym(t, "learn", "--dir", other, lkSkillSrc(t, scratchDir(t), "lint", "o"))
+	e.mustGym(t, "learn", "--dir", other, lkSkillSrc(t, filepath.Join(other, "src"), "lint", "o"))
 	e.mustGym(t, "unlearn", "--dir", other, "lint")
 	if !lkHasEntry(t, e, "lint") {
 		t.Fatal("unlearn --dir edited the current folder's lock")

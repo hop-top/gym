@@ -87,19 +87,32 @@ func (a *App) recordLock(sl scopeLock, entries []lock.Entry, noLock bool) error 
 		}
 		return nil
 	}
+	changed := false
 	for _, e := range entries {
-		a.warnNotPortable(sl, e)
+		if a.notLockable(sl, e) {
+			// The lock no longer describes what is installed under this name.
+			changed = f.Remove(e.Name) || changed
+			continue
+		}
 		f.Set(e)
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 	return sl.save(f)
 }
 
-// warnNotPortable reports lock-source-not-portable for an entry whose
-// local source is stored as an absolute path.
-func (a *App) warnNotPortable(sl scopeLock, e lock.Entry) {
-	if lock.IsLocalSource(e.Source) && filepath.IsAbs(e.Source) {
-		a.Logger().Warnf("%s: %s is outside %s; the lock stores an absolute path that a project lock will not restore from", lock.FindingNotPortable, e.Source, sl.Base)
+// notLockable reports whether e is a directory install from outside the
+// scope root of a project or folder lock. Such an entry would be refused on
+// read (lock-source-escapes), so it is never written; the skill stays
+// untracked by the lock. Says so on stderr.
+func (a *App) notLockable(sl scopeLock, e lock.Entry) bool {
+	if sl.Scope != lock.ScopeProject || e.Kind != lock.KindDir || !lock.IsLocalSource(e.Source) || !filepath.IsAbs(e.Source) {
+		return false
 	}
+	a.Logger().Warnf("%s: %s is outside %s; not written to the lock", lock.FindingNotPortable, e.Source, sl.Base)
+	return true
 }
 
 // trainLocks holds the locks of the scopes one train run touches.
@@ -194,15 +207,6 @@ func (a *App) skipPinned(plan []upgrade.PlanItem, locks *trainLocks) ([]upgrade.
 		kept = append(kept, it)
 	}
 	return kept, skipped
-}
-
-// lastEntry returns the lock entry of name in scope (after replace).
-func (t *trainLocks) lastEntry(scope, name string) lock.Entry {
-	if f := t.files[scope]; f != nil {
-		e, _ := f.Find(name)
-		return e
-	}
-	return lock.Entry{}
 }
 
 // frozenTrainCheck fails with lock-frozen when train would upgrade
