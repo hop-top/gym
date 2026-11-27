@@ -119,7 +119,16 @@ Hard failures are `*install.AdmissionError` (not relaxable by `--insecure`, inde
 | `digest-unsupported-entry` | symlink or irregular file in the tree |
 | `approval-revoked` | operator revoked the skill name or digest |
 
-Policy denies surface as `guard.PolicyDenyError` (`errors.Is(err, guard.ErrPolicyDeny)`). The rejection reason is the rule name minus `admission-`, except `admission-data-class` (`data-class-exceeds-ceiling`), `admission-approval-enforced` (`approval-required`), `admission-manifest-required` (`manifest-missing`). `gym.skill.install.rejected` is published once per admission failure from `learn` and `train` with `{skill, scope, reason, request_id}`; `request_id` matches the `gym.skill.install.requested` event of the same attempt (absent for hard failures, which occur before the gate). Validator failures and non-admission policy denies do not publish it.
+Policy denies surface as `guard.PolicyDenyError` (`errors.Is(err, guard.ErrPolicyDeny)`). `gym.skill.install.rejected` is published once per rejected install or upgrade attempt from `learn` and `train` with `{skill, scope, reason, request_id}`. `request_id` is the id the attempt used for its `gym.skill.install.requested` event; failures before the gate (hard admission failures, validator failure) have no requested event and carry the attempt's own id. `--insecure` lowering a deny to a warn is not a rejection: nothing is published. Errors that are not rejections (source fetch, I/O) publish nothing; no bus wired publishes nothing.
+
+| Rejection | Reason |
+|-----------|--------|
+| hard admission failure | the hard-failure reason (table above) |
+| `admission-*` policy deny | rule name minus `admission-`, except `admission-data-class` (`data-class-exceeds-ceiling`), `admission-approval-enforced` (`approval-required`), `admission-manifest-required` (`manifest-missing`) |
+| validator command failed, timed out, or could not run | `validator-failed` |
+| other policy deny (e.g. `no-curl-bash`, `no-postinstall-script`, `path-allowlist`) | the denying rule name |
+
+Deny-severity findings pick the reason (warn findings only under `--strict`, when no deny finding exists); among them an `admission-*` rule wins, else the first finding. Gate timeout under `--strict` denies without findings and publishes nothing.
 
 ### Install-requested admission fields
 

@@ -302,11 +302,11 @@ Computed booleans keep CEL trivial. Ranks stay in Go (single ladder definition).
 
 **Rejection reasons** (stable strings, reuse `SkillInstallRejectedPayload.Reason`):
 
-`manifest-invalid`, `manifest-missing`, `digest-mismatch`, `digest-unsupported-entry`, `tools-undeclared`, `data-class-exceeds-ceiling`, `approval-required`, `approval-revoked`.
+`manifest-invalid`, `manifest-missing`, `digest-mismatch`, `digest-unsupported-entry`, `tools-undeclared`, `data-class-exceeds-ceiling`, `approval-required`, `approval-revoked`, `validator-failed`; a non-admission policy deny carries the denying rule's name.
 
 Policy denies reach the user as `ErrPolicyDeny` (typed `PolicyDenyError`, with findings) and rule names in the message; the reason string is the rule name minus the `admission-` prefix, except `admission-data-class` (`data-class-exceeds-ceiling`), `admission-approval-enforced` (`approval-required`), and `admission-manifest-required` (`manifest-missing`).
 
-Gap 5 fix: `gym.skill.install.rejected` is published from the production install path (`learn`, `train`) for every admission failure, before returning the error. Validator failures and non-admission policy denies are outside this work. Hard failures occur before the gate, so their rejected event carries a `request_id` with no matching requested event.
+Gap 5 fix: `gym.skill.install.rejected` is published from the production install path (`learn`, `train`) for every rejected install or upgrade attempt, before returning the error: admission failures, validator failures (`validator-failed`), and non-admission policy denies (reason = denying rule name). `--insecure`-lowered denies and non-rejection errors (source fetch, I/O) publish nothing. The `request_id` matches the requested event of the same attempt; failures before the gate (hard admission failures, validator failure) have no matching requested event and carry the attempt's own id.
 
 **Exit codes**: keep exit 1 for every rejection (current `App.Run` behavior). Distinguishing codes would be a cross-cutting change to `Run` and every command. The reason is carried in stderr and the rejected event.
 
