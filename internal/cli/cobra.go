@@ -234,13 +234,15 @@ func (a *App) learnCobra(vp *viper.Viper) *cobra.Command {
 			if !cmd.Flags().Changed("agent") {
 				agents = vp.GetStringSlice("learn.agents")
 			}
-			return a.runLearnCtx(cmd.Context(), toGlobal, pathHint, agents, args)
+			noLock, _ := cmd.Flags().GetBool("no-lock")
+			return a.runLearnOpts(cmd.Context(), learnOpts{Global: toGlobal, PathHint: pathHint, Agents: agents, Tokens: args, NoLock: noLock})
 		},
 	}
 	addDirFlag(c)
 	c.Flags().BoolP("global", "g", false, "install globally (default: install into CWD/.gym)")
 	c.Flags().String("path", "", "install path name/path override")
 	c.Flags().StringArray("agent", nil, "limit install paths by name/path pattern (prefix with ! to exclude)")
+	c.Flags().Bool("no-lock", false, "install without reading or writing the lock")
 	_ = vp.BindPFlag("learn.global", c.Flags().Lookup("global"))
 	_ = vp.BindPFlag("learn.path", c.Flags().Lookup("path"))
 	_ = vp.BindPFlag("learn.agents", c.Flags().Lookup("agent"))
