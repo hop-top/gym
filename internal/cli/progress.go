@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"hop.top/kit/go/console/progress"
+
+	"hop.top/gym/internal/install"
 )
 
 // progressReporterFromContext returns the active progress.Reporter on
@@ -26,7 +28,7 @@ func progressReporterFromContext(ctx context.Context) progress.Reporter {
 func emitPhase(ctx context.Context, phase, item string) {
 	progressReporterFromContext(ctx).Emit(ctx, progress.Event{
 		Phase: phase,
-		Item:  item,
+		Item:  install.RedactURL(item),
 		At:    time.Now().UTC(),
 	})
 }
@@ -37,7 +39,7 @@ func emitPhase(ctx context.Context, phase, item string) {
 func emitPhaseN(ctx context.Context, phase, item string, current, total int64) {
 	progressReporterFromContext(ctx).Emit(ctx, progress.Event{
 		Phase: phase,
-		Item:  item,
+		Item:  install.RedactURL(item),
 		Bytes: current,
 		Total: total,
 		At:    time.Now().UTC(),
@@ -49,7 +51,7 @@ func emitOK(ctx context.Context, phase, item string) {
 	t := true
 	progressReporterFromContext(ctx).Emit(ctx, progress.Event{
 		Phase: phase,
-		Item:  item,
+		Item:  install.RedactURL(item),
 		OK:    &t,
 		At:    time.Now().UTC(),
 	})
@@ -60,7 +62,7 @@ func emitFail(ctx context.Context, phase, item string) {
 	f := false
 	progressReporterFromContext(ctx).Emit(ctx, progress.Event{
 		Phase: phase,
-		Item:  item,
+		Item:  install.RedactURL(item),
 		OK:    &f,
 		At:    time.Now().UTC(),
 	})

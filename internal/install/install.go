@@ -286,7 +286,7 @@ func stageSource(ctx context.Context, source string) (string, func(), error) {
 	rep := progress.FromContext(ctx)
 	rep.Emit(ctx, progress.Event{
 		Phase: "clone",
-		Item:  source,
+		Item:  RedactURL(source),
 		At:    time.Now().UTC(),
 	})
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", source, tmp)
@@ -294,17 +294,18 @@ func stageSource(ctx context.Context, source string) (string, func(), error) {
 		ok := false
 		rep.Emit(ctx, progress.Event{
 			Phase: "clone",
-			Item:  source,
+			Item:  RedactURL(source),
 			OK:    &ok,
 			At:    time.Now().UTC(),
 		})
 		cleanup()
-		return "", nil, fmt.Errorf("git clone failed: %w\n%s", err, strings.TrimSpace(string(out)))
+		return "", nil, fmt.Errorf("git clone failed: %s\n%s",
+			redactText(err.Error(), source), redactText(strings.TrimSpace(string(out)), source))
 	}
 	ok := true
 	rep.Emit(ctx, progress.Event{
 		Phase: "clone",
-		Item:  source,
+		Item:  RedactURL(source),
 		OK:    &ok,
 		At:    time.Now().UTC(),
 	})
@@ -334,6 +335,9 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 		return state.InstalledSkill{}, fmt.Errorf("source URL is required")
 	}
 
+	if err := CheckSourceURL(entry.SourceURL); err != nil {
+		return state.InstalledSkill{}, err
+	}
 	root, cleanup, err := stageSource(ctx, entry.SourceURL)
 	if err != nil {
 		return state.InstalledSkill{}, err
@@ -391,6 +395,9 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 		return nil, fmt.Errorf("source URL is required")
 	}
 
+	if err := CheckSourceURL(entry.SourceURL); err != nil {
+		return nil, err
+	}
 	root, cleanup, err := stageSource(ctx, entry.SourceURL)
 	if err != nil {
 		return nil, err
@@ -482,7 +489,7 @@ func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath
 	return state.InstalledSkill{
 		Name:        entry.Name,
 		Version:     entry.Version,
-		SourceURL:   entry.SourceURL,
+		SourceURL:   RedactURL(entry.SourceURL),
 		Repository:  entry.Repository,
 		InstalledAt: time.Now().UTC(),
 		InstallPath: dest,
