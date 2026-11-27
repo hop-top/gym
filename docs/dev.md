@@ -36,7 +36,7 @@ make fmt
 - `internal/events/`: event payload structs + topic constants (coach, skill, warmup, toolspec, external subscribers)
 - `internal/eventbus/`: kit/runtime/bus wrapper; adapter selection + request/response helpers
 - `internal/judge/`: rsx-backed coach judging subscriber; cache; subprocess driver
-- `internal/guard/`: CEL policy gate subscriber; loader for built-in + user/project policy overrides
+- `internal/guard/`: CEL policy gate subscriber; loader for built-in policies + user overrides + add-only project policies
 - `internal/guard/policies/`: baked-in CEL policies (default YAML files, including `admission-*`)
 - `internal/cheat/`: toolspec registry builder; gym self-spec; skill specs from manifests; tip adapter writer; optional tip bridge subscriber
 - `e2e/`: integration tests with xrr cassettes (build-tag gated, `go test -tags cassettes ./e2e/...`)
@@ -206,7 +206,7 @@ message: "why this matched"
 
 3. Document the policy in `docs/agent.md` under the "Policy guards" section.
 
-User/project overrides in `$XDG_CONFIG_HOME/gym/policies/` or `<root>/.gym/policies/` can disable via `policies.yaml` (`disable: ["my-policy-name"]`) or relax from deny to warn (`relax: ["my-policy-name"]`).
+User overrides in `$XDG_CONFIG_HOME/gym/policies/` can disable via `policies.yaml` (`disable: ["my-policy-name"]`), relax from deny to warn (`relax: ["my-policy-name"]`), or redefine by name. `<root>/.gym/policies/` is untrusted repository content: it can only add policies (and disable/relax its own); entries touching built-in or user policies are ignored with a logged warning (`guard.LoadOptions.Logger`).
 
 ## Adding a new toolspec source
 

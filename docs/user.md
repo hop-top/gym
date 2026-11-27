@@ -296,12 +296,16 @@ Coaches and skills pass through gates by default. To run outside the safety chec
 - `gym learn --insecure …` — proceed even on DENY verdicts.
 - `gym train --insecure …` — proceed even on DENY verdicts.
 
-For project-level policy relaxation, create `.gym/policies/policies.yaml`:
+To relax or disable a rule for yourself, create `$XDG_CONFIG_HOME/gym/policies/policies.yaml`:
 
 ```yaml
-relax: ["no-large-binary"]  # allow large binaries without re-opt-in
+relax: ["no-large-binary"]  # deny -> warn
 disable: ["no-postinstall-script"]  # completely disable this rule
 ```
+
+A user-dir `.yaml` file whose policy name matches an existing one replaces it.
+
+Project policies (`<project-root>/.gym/policies/`) are repository content and are not trusted to weaken checks. They may add new policies. Disabling or relaxing a policy that is not project-defined, and a project file redefining a built-in or user policy, are ignored with one warning per entry; the built-in/user definition stays in force. A project may disable or relax policies it defines itself.
 
 ## Cheat sheets and inline hints
 
@@ -356,5 +360,5 @@ Most users stay on the default memory bus. Daemons and multi-host setups use SQL
 - Local registry cache: `$XDG_DATA_HOME/gym/registry-index.json`
 - Coach judgement cache: `$XDG_CACHE_HOME/gym/judgements/<sha256>.json` (24-hour TTL; bypass with `--refresh-judgement`)
 - Policy overrides (user): `$XDG_CONFIG_HOME/gym/policies/` (YAML files)
-- Policy overrides (project): `<project-root>/.gym/policies/` (YAML files)
+- Policy additions (project): `<project-root>/.gym/policies/` (YAML files; add-only)
 - Daemon bus (SQLite): `$XDG_STATE_HOME/gym/bus.sqlite` (used when `--bus sqlite` or daemon mode)
