@@ -10,7 +10,44 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"hop.top/kit/go/console/progress"
 )
+
+// Option mutates Refresh behavior. The zero set leaves Refresh silent
+// (no progress events) and behaves as before.
+type Option func(*refreshOptions)
+
+type refreshOptions struct {
+	reporter progress.Reporter
+}
+
+// WithProgress wires a kit/console/progress reporter so each per-source
+// fetch emits start + completion events. Pass progress.FromContext(ctx)
+// at the call site to hook into the global --progress-format selection.
+//
+// Nil falls back to progress.Discard().
+func WithProgress(r progress.Reporter) Option {
+	return func(o *refreshOptions) {
+		if r == nil {
+			r = progress.Discard()
+		}
+		o.reporter = r
+	}
+}
+
+// emitDone is the local helper for "phase ended" events. Mirrors the
+// kit/console/progress contract that completion is signalled by an OK
+// pointer (true=success, false=failure).
+func emitDone(ctx context.Context, r progress.Reporter, phase, item string, ok bool) {
+	flag := ok
+	r.Emit(ctx, progress.Event{
+		Phase: phase,
+		Item:  item,
+		OK:    &flag,
+		At:    time.Now().UTC(),
+	})
+}
 
 // RepositorySource is a configured registry source entry.
 type RepositorySource struct {
@@ -108,7 +145,16 @@ type Report struct {
 }
 
 // Refresh fetches all configured sources and computes index/report diff.
-func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index) (Index, Report, error) {
+//
+// When a kit/console/progress reporter is wired via WithProgress, Refresh
+// emits one start event per source plus a completion event with OK
+// reflecting fetch success. Total slot is the source count so consumers
+// can render "n of N" progress.
+func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index, opts ...Option) (Index, Report, error) {
+	o := refreshOptions{reporter: progress.Discard()}
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if cfg.MinStarsForCurated <= 0 {
 		cfg.MinStarsForCurated = 100
 	}
@@ -120,11 +166,22 @@ func Refresh(ctx context.Context, cfg Config, fetcher Fetcher, old Index) (Index
 		oldByName[s.Name] = s
 	}
 
-	for _, src := range cfg.Repositories {
+	total := int64(len(cfg.Repositories))
+	for i, src := range cfg.Repositories {
+		current := int64(i + 1)
+		o.reporter.Emit(ctx, progress.Event{
+			Phase: "fetch",
+			Item:  src.URL,
+			Bytes: current,
+			Total: total,
+			At:    time.Now().UTC(),
+		})
 		raw, err := fetcher.Fetch(ctx, src.URL)
 		if err != nil {
+			emitDone(ctx, o.reporter, "fetch", src.URL, false)
 			return Index{}, Report{}, err
 		}
+		emitDone(ctx, o.reporter, "fetch", src.URL, true)
 		var doc skillsDoc
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			return Index{}, Report{}, fmt.Errorf("parse %s: %w", src.URL, err)
