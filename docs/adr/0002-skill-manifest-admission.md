@@ -125,7 +125,7 @@ Known gap: git checkout filters (`autocrlf`, `eol` attributes) can change bytes 
 
 | Source | Trust | Where |
 |--------|-------|-------|
-| Lockfile pin | Operator/project decision | Planned lockfile (not built). Entry `{name, source_url, digest}` |
+| Lockfile pin | Operator/project decision | Lockfile `.gym/lock.json` (ADR-0003). Entry `{name, kind, source, requested, version, commit, path, registry, digest}` |
 | Registry entry | Index publisher (https, curated flag) | New optional `SkillEntry.digest` (`json:"digest,omitempty"`) |
 | Detached file next to source (`<skill>.sha256`) | Same as source | Rejected: same origin as content, adds no trust |
 | None | Unpinned | Computed and recorded only |
