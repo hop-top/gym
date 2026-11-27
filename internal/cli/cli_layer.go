@@ -47,7 +47,7 @@ func (a *App) loadCLIConfig(vp *viper.Viper) error {
 	allowed := map[string]any{}
 	pv := viper.New()
 	pv.SetConfigType("yaml")
-	pv.SetConfigFile(filepath.Join(a.CWD, ".gym", cliFile+".yaml"))
+	pv.SetConfigFile(filepath.Join(a.startDir(), ".gym", cliFile+".yaml"))
 	if err := pv.ReadInConfig(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	} else if err == nil {

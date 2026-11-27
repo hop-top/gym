@@ -16,6 +16,11 @@ type SkillInfo struct {
 	Scope       string // "global" or "project"
 	InstallPath string
 	Metadata    *Metadata
+	// Folder is the scope root of a project skill; empty for global.
+	Folder string
+	// Depth is the skill's scope position in the resolution chain, 0 being
+	// the innermost folder; the global scope follows the last folder.
+	Depth int
 }
 
 // GenerateXML creates <available_skills> XML block for Claude Code.
@@ -41,6 +46,8 @@ func GenerateJSON(skills []SkillInfo) (string, error) {
 		Version     string `json:"version,omitempty"`
 		Scope       string `json:"scope"`
 		InstallPath string `json:"install_path,omitempty"`
+		Folder      string `json:"folder,omitempty"`
+		Depth       int    `json:"depth"`
 	}
 
 	output := make([]jsonSkill, 0, len(skills))
@@ -51,6 +58,8 @@ func GenerateJSON(skills []SkillInfo) (string, error) {
 			Version:     s.Version,
 			Scope:       s.Scope,
 			InstallPath: s.InstallPath,
+			Folder:      s.Folder,
+			Depth:       s.Depth,
 		})
 	}
 

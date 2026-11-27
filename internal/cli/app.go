@@ -21,10 +21,8 @@ import (
 	"hop.top/gym/internal/ide"
 	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/judge"
-	"hop.top/gym/internal/project"
 	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/state"
-	"hop.top/gym/internal/upgrade"
 	"hop.top/gym/internal/xdg"
 )
 
@@ -76,6 +74,10 @@ type App struct {
 
 	// maxDataClass is the --max-data-class override.
 	maxDataClass string
+
+	// scopeDir is the --dir folder of the running command, "" when unset
+	// (see applyDirFlag).
+	scopeDir string
 }
 
 func NewApp(stdout, stderr io.Writer, cwd string) *App {
@@ -114,26 +116,9 @@ type runtime struct {
 	Config      config.Config
 	ProjectRoot string
 	InProject   bool
-}
-
-func (a *App) loadRuntime() (runtime, error) {
-	dirs, err := xdg.AppDirs(config.AppName)
-	if err != nil {
-		return runtime{}, err
-	}
-	if err := xdg.Ensure(dirs); err != nil {
-		return runtime{}, err
-	}
-	cfg, warns, err := config.LoadMergedConfigWarn(a.CWD, a.cfgPaths, a.cfgOverrides)
-	if err != nil {
-		return runtime{}, err
-	}
-	for _, w := range warns {
-		a.Logger().Warn(w)
-	}
-	a.applyAdmissionFlags(&cfg)
-	root, ok := project.DetectRoot(a.CWD)
-	return runtime{Dirs: dirs, Config: cfg, ProjectRoot: root, InProject: ok}, nil
+	// Chain is the folder scope chain for the command's start folder,
+	// innermost first (scope.Chain).
+	Chain []string
 }
 
 func (a *App) printlnf(format string, args ...any) {
@@ -248,7 +233,10 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 		return errors.New("learn requires at least one skill name or URL")
 	}
 
-	rt, err := a.loadRuntime()
+	if toGlobal && a.scopeDir != "" {
+		return errDirGlobal
+	}
+	rt, err := a.loadScopeAt(a.startDir(), !toGlobal)
 	if err != nil {
 		return err
 	}
@@ -267,8 +255,9 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 		return err
 	}
 	projectSkills := []state.InstalledSkill(nil)
-	projectRoot := a.CWD
+	projectRoot := a.startDir()
 	if scope == "project" {
+		a.noteNewFolderScope(rt)
 		projectSkills, err = state.LoadProject(projectRoot)
 		if err != nil {
 			return err
@@ -302,7 +291,7 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 			Config:        rt.Config,
 			ProjectRoot:   projectRoot,
 			CWD:           a.CWD,
-			Gate:          a.installGate(reqID),
+			Gate:          a.installGate(reqID, projectRoot),
 		})
 		if err != nil {
 			emitFail(ctx, "install", tok)
@@ -330,133 +319,6 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 func isExistingDir(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
-}
-
-// runTrain is the legacy non-context entry point.
-func (a *App) runTrain(noGlobal bool, patterns []string) error {
-	return a.runTrainCtx(context.Background(), noGlobal, patterns)
-}
-
-// runTrainCtx is the context-aware variant. Emits per-skill progress
-// events ("plan", "upgrade") via kit/console/progress.
-func (a *App) runTrainCtx(ctx context.Context, noGlobal bool, patterns []string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	rt, err := a.loadRuntime()
-	if err != nil {
-		return err
-	}
-	idx, err := registry.LoadIndex(rt.Dirs.DataHome)
-	if err != nil {
-		return err
-	}
-	globalSkills, err := state.LoadGlobal(rt.Dirs.StateHome)
-	if err != nil {
-		return err
-	}
-	projectSkills := []state.InstalledSkill{}
-	inProjectWithSkills := false
-	projectRoot := rt.ProjectRoot
-	if rt.InProject {
-		projectSkills, err = state.LoadProject(projectRoot)
-		if err != nil {
-			return err
-		}
-		inProjectWithSkills = len(projectSkills) > 0
-	}
-
-	emitPhase(ctx, "plan", "train")
-	plan := upgrade.Plan(upgrade.Input{
-		InProjectWithSkills: inProjectWithSkills,
-		MirrorGlobal:        rt.Config.Upgrade.MirrorGlobalFromProject,
-		NoGlobal:            noGlobal,
-		Patterns:            patterns,
-		ProjectSkills:       projectSkills,
-		GlobalSkills:        globalSkills,
-	})
-	emitOK(ctx, "plan", "train")
-	plan, refusedErr := a.trustedPlan(ctx, plan, rt, projectRoot)
-	if len(plan) == 0 {
-		if refusedErr == nil {
-			a.printlnf("no matching installed skills to train")
-		}
-		return refusedErr
-	}
-
-	// Gate the whole upgrade plan via the bus before mutating
-	// any filesystem. The guard publishes
-	// policy.guard.install.evaluated; we block on it.
-	if err := a.gateUpgradePlan(ctx, plan); err != nil {
-		return err
-	}
-
-	total := int64(len(plan))
-	changedGlobal := false
-	changedProject := false
-	upgradedCount := 0
-	for i, item := range plan {
-		emitPhaseN(ctx, "upgrade", item.Skill.Name, int64(i+1), total)
-		entry, ok := idx.Find(item.Skill.Name)
-		if !ok {
-			emitFail(ctx, "upgrade", item.Skill.Name)
-			a.printlnf("skip %s (%s): not found in current registry index", item.Skill.Name, item.Scope)
-			continue
-		}
-		if !registry.NewerThan(entry.Version, item.Skill.Version) {
-			emitOK(ctx, "upgrade", item.Skill.Name)
-			continue
-		}
-		pathHint := filepath.Dir(item.Skill.InstallPath)
-		reqID := newRequestID()
-		installed, err := install.InstallSkill(ctx, install.Request{
-			Entry:       entry,
-			Source:      entry.SourceURL,
-			Scope:       item.Scope,
-			PathHint:    pathHint,
-			Config:      rt.Config,
-			ProjectRoot: projectRoot,
-			CWD:         a.CWD,
-			// The plan gate above sees skill/scope/from/source only; the
-			// per-skill gate sees the content-derived admission facts.
-			Gate:              a.installGate(reqID),
-			PreviousDataClass: item.Skill.DataClass,
-		})
-		if err != nil {
-			emitFail(ctx, "upgrade", item.Skill.Name)
-			a.publishInstallRejected(ctx, item.Skill.Name, item.Scope, reqID, err)
-			return err
-		}
-		emitOK(ctx, "upgrade", item.Skill.Name)
-		upgradedCount++
-		a.printlnf("upgraded %s (%s): %s -> %s", item.Skill.Name, item.Scope, item.Skill.Version, installed.Version)
-
-		if item.Scope == "global" {
-			globalSkills = state.Upsert(globalSkills, installed)
-			changedGlobal = true
-		} else {
-			projectSkills = state.Upsert(projectSkills, installed)
-			changedProject = true
-		}
-	}
-
-	if changedGlobal {
-		if err := state.SaveGlobal(rt.Dirs.StateHome, globalSkills); err != nil {
-			return err
-		}
-	}
-	if changedProject {
-		if projectRoot == "" {
-			projectRoot = a.CWD
-		}
-		if err := state.SaveProject(projectRoot, projectSkills); err != nil {
-			return err
-		}
-	}
-	if upgradedCount == 0 {
-		a.printlnf("no upgrades available")
-	}
-	return refusedErr
 }
 
 func (a *App) runPathsList() error {

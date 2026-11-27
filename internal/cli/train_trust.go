@@ -20,7 +20,11 @@ func (a *App) trustedPlan(ctx context.Context, plan []upgrade.PlanItem, rt runti
 	var refused []error
 	for _, item := range plan {
 		parents := install.TrustedParents(item.Scope, rt.Config)
-		if err := install.CheckRecordPath(item.Skill, item.Scope, projectRoot, parents); err != nil {
+		root := projectRoot
+		if item.Root != "" {
+			root = item.Root
+		}
+		if err := install.CheckRecordPath(item.Skill, item.Scope, root, parents); err != nil {
 			emitFail(ctx, "upgrade", item.Skill.Name)
 			a.publishInstallRejected(ctx, item.Skill.Name, item.Scope, newRequestID(), err)
 			refused = append(refused, err)
@@ -36,10 +40,16 @@ func (a *App) trustedPlan(ctx context.Context, plan []upgrade.PlanItem, rt runti
 // directory (warmup, cheat). Each skipped record warns once and is never
 // read.
 func (a *App) trustedRecords(rt runtime, recs []state.InstalledSkill, scope string) []state.InstalledSkill {
+	return a.trustedRecordsAt(rt, recs, scope, rt.ProjectRoot)
+}
+
+// trustedRecordsAt is trustedRecords for the records of the scope rooted at
+// root: each folder in a chain is checked against its own root.
+func (a *App) trustedRecordsAt(rt runtime, recs []state.InstalledSkill, scope, root string) []state.InstalledSkill {
 	parents := install.TrustedParents(scope, rt.Config)
 	out := make([]state.InstalledSkill, 0, len(recs))
 	for _, r := range recs {
-		if err := install.CheckRecordPath(r, scope, rt.ProjectRoot, parents); err != nil {
+		if err := install.CheckRecordPath(r, scope, root, parents); err != nil {
 			a.Logger().Warnf("skipping installed skill %q: %v", r.Name, err)
 			continue
 		}
