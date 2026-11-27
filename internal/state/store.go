@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"hop.top/gym/internal/fsutil"
 	"hop.top/gym/internal/project"
 )
 
@@ -80,7 +81,7 @@ func saveSkills(path string, skills []InstalledSkill) error {
 		return err
 	}
 	blob = append(blob, '\n')
-	return os.WriteFile(path, blob, 0o644)
+	return fsutil.WriteFileAtomic(path, blob, 0o644)
 }
 
 func globalPath(stateHome string) string {
