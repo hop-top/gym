@@ -233,3 +233,22 @@ func learnFlags(cmd *cobra.Command, global bool, pathHint string, agents, tokens
 	o.Digest, _ = cmd.Flags().GetString("digest")
 	return o
 }
+
+// lockRemover is the Remover.OnSkillGone hook that drops a skill's lock
+// entry; nil with keep. A missing lock or entry is not an error; a corrupt
+// lock is, and the file is left as it is.
+func (a *App) lockRemover(sl scopeLock, keep bool) func(string) error {
+	if keep {
+		return nil
+	}
+	return func(name string) error {
+		f, err := sl.load()
+		if err != nil {
+			return err
+		}
+		if !f.Remove(name) {
+			return nil
+		}
+		return sl.save(f)
+	}
+}
