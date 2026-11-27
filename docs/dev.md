@@ -53,6 +53,8 @@ make fmt
   - `-c <file>`: kit's `-c/--config` flag; `PersistentPreRunE` passes `Root.ConfigArgs()` files and overrides into the loader
 - Precedence: defaults < system < user < project < `-c <file>` < `-c key=value`.
 - Merge strategy (kit): scalars replace, maps merge, lists replace (no append across layers).
+- The project layer is repository content and is not handed to kit with the others. `loadConfigWarn` loads defaults+system+user through kit, reads the project file alone (`readProjectLayer`, `internal/config/project_layer.go`), copies only the allowlisted keys onto the result (`projectKeys`: `install_paths`, `repositories`, `curation`, `upgrade`; `admission` goes through `loadAdmission`'s clamp), then applies `-c` files and overrides unrestricted. Any other key warns once (`config: ignoring project key "<key>" (user/system/-c only)`), so a key added to `Config` is ignored from a project until listed. `LoadMergedConfigWarn` returns the warnings; the CLI prints them.
+- Project `install_paths` (`sanitizeProjectPaths`): relative, no `..` escape, no `~`, inside the project root after `ResolveExisting` (symlinks on the existing prefix); kept entries are made absolute against the project root. `normalizePaths` anchors operator-layer relative project paths at the project root too, never the working directory.
 - Mutations (`AddInstallPath`, `AddRepository`, `RemoveRepository`) write one key via kit `SetValue`, preserving the rest of the file.
 - Struct fields carry `yaml` tags; kit matches keys (files and `-c key=value`) by them.
 - `-c/--config` is hidden from default `--help` by kit; `execCobra` calls `Root.ApplyGroupVisibility` so `--help-all` reveals it.
@@ -86,8 +88,13 @@ Index storage:
 - admission (`internal/install/admission.go`, `Admit`): digest, pin, `gym.json`, tool coverage, ceiling, approval
 - gate (policies) with the admission facts
 - copy validated directory into install path:
-  - destination is `<install-path>/<skill-name>`
+  - destination is `<install-path>/<skill-name>`; the name must be a single path component
+  - `.git` directories are skipped (`fsutil.CopyDir` skip predicate), as in the digest
   - destination is re-hashed after the copy; a mismatch removes it and fails
+  - the default project path `<root>/.gym/skills` must not resolve outside the project root
+- source URLs: `install.CheckSourceURL` rejects a userinfo password before any network use (`source-credentials-in-url`); `install.RedactURL` strips the password and credential-looking query values from `source_url` in state, events, progress items and error text
+
+State trust: a state record's `install_path` is used for a write or delete only after `install.CheckRecordPath` (clean absolute path, base name = skill name, parent resolved inside the project root or equal to a trusted parent from `install.TrustedParents`, directory or absent, never a symlink). Failure is `install-path-untrusted: <path>`; `gym train` skips that record and still processes the others. Any future uninstall must call the same function.
 
 `gym train` passes a per-skill gate (request-scoped) in addition to the plan gate.
 

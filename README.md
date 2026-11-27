@@ -210,6 +210,8 @@ Canonical file name is `config.yaml`. An existing `config.json` (user or project
 
 Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
 
+A project file is repository content: whoever cloned the repository did not write it. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (tighten-only, see Admission). Any other key, `validator` included, is ignored with one warning per key; the user and system files, `-c <file>` and `-c key=value` are the operator's and are not restricted. A project `install_paths` entry must be relative and stay inside the project root (no `..`, no `~`, no symlink out of the tree); relative paths resolve against the project root, not the working directory. Other entries are ignored with a warning. The project's `.gym/installed.json` is trusted only for records whose `install_path` is `<install path>/<skill name>` under the project root (project scope) or a configured or standard global path (global scope); `gym train` refuses the rest with `install-path-untrusted` and leaves them alone.
+
 ```bash
 gym -c curation.min_stars=50 paths
 gym -c /path/to/extra.yaml paths

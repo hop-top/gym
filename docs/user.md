@@ -18,7 +18,7 @@ go build -o gym ./cmd/gym
 
 Installs are gated by validation (default: `skills-ref validate {path}`).
 
-If you use a different validator, set it in user/project config:
+If you use a different validator, set it in user or system config (or with `-c`). A project config cannot set it: `validator` there is ignored with a warning, because it names a command to run.
 
 ```json
 {
@@ -59,6 +59,10 @@ Two scopes exist for *config*:
 A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highest: defaults, system, user, project, `-c <file>`, `-c key=value`. Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
 
 Project roots are detected by presence of `.gym/config.yaml`, `.gym/config.json` or `.gym/installed.json`.
+
+A project file arrives with a clone, so it is not trusted like your own config. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (which can only tighten). Every other key, including `validator`, is ignored with `config: ignoring project key "<key>" (user/system/-c only)`. Project `install_paths` must be relative and stay inside the project root: an absolute path, a `..` that leaves the tree, a `~` path, or a symlink out of the tree is ignored with `config: install path <p> escapes project <root>`. Relative project paths resolve against the project root, not the directory you run gym from. `.gym/skills` must not be a symlink out of the tree either. Absolute and `~` paths stay fine in user and system config and with `-c`.
+
+`.gym/installed.json` is trusted the same way: `gym train` writes or replaces a recorded skill only when its `install_path` is `<install path>/<skill name>`, a real directory (or absent, never a symlink), under the project root for project skills, or under a configured or standard global install path for global skills. Any other record fails with `install-path-untrusted: <path>`, its directory is not touched, and the remaining records still upgrade. `--insecure` does not relax this.
 
 The canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` is beside it, and `config.yaml` wins when both exist. Commands that change config write `config.yaml`, first copying the old `config.json` content into it; the old file is never modified. Likewise the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) keep being used, all four together, when any of them exists and the matching `XDG_*` variable is unset (a set variable always wins).
 
@@ -102,6 +106,8 @@ Or learn directly from a URL / local dir:
 gym learn https://github.com/acme/acme-auth-skill.git
 gym learn /path/to/local/skill
 ```
+
+A URL must not carry a password (`https://user:token@host/...` fails with `source-credentials-in-url: use a git credential helper or ssh key`); `git@host:org/repo` and `ssh://git@host/...` are fine. Recorded and printed source URLs have credential-looking query parameters (`token`, `key`, `secret`, `password`, `auth`, ...) replaced by `REDACTED`. The installed copy never contains `.git`: installed bytes are exactly the bytes the content digest covers.
 
 ## Common Commands
 
