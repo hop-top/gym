@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 
+	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/state"
 	"hop.top/gym/internal/warmup"
 )
@@ -66,5 +68,35 @@ func (a *App) runWarmup(format, scope, output string) error {
 		fmt.Fprint(a.Stdout, content)
 	}
 
+	// Publish gym.warmup.metadata.emitted so subscribers
+	// (tip's index, judge cache, etc.) can pick up the metadata.
+	// Best-effort — never fail the command on a publish error.
+	a.publishWarmupMetadata(format, scope, allSkills)
+
 	return nil
+}
+
+// publishWarmupMetadata mirrors the rendered skill list onto the bus
+// under TopicWarmupMetadataEmitted. Best-effort: a missing bus or
+// publish error never fails the warmup command.
+func (a *App) publishWarmupMetadata(format, scope string, skills []warmup.SkillInfo) {
+	if a == nil || a.bus == nil {
+		return
+	}
+	out := make([]events.WarmupSkill, 0, len(skills))
+	for _, s := range skills {
+		out = append(out, events.WarmupSkill{
+			Name:    s.Name,
+			Version: s.Version,
+			Scope:   s.Scope,
+			Path:    s.InstallPath,
+			Summary: s.Description,
+		})
+	}
+	_ = a.bus.Publish(context.Background(), events.TopicWarmupMetadataEmitted,
+		events.WarmupMetadataEmittedPayload{
+			Format: format,
+			Scope:  scope,
+			Skills: out,
+		})
 }

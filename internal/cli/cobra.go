@@ -1,67 +1,191 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	kitcli "hop.top/kit/go/console/cli"
+	kitprogress "hop.top/kit/go/console/progress"
+	kitupgrade "hop.top/kit/go/core/upgrade"
 
+	"hop.top/gym/internal/cheat"
 	"hop.top/gym/internal/config"
+	"hop.top/gym/internal/eventbus"
+	"hop.top/gym/internal/events"
+	"hop.top/gym/internal/judge"
 	"hop.top/gym/internal/xdg"
 )
+
+// notifyUpgrade is indirected so tests can stub the kit upgrade notifier.
+var notifyUpgrade = func(ctx context.Context, c *kitupgrade.Checker, w interface{ Write(p []byte) (int, error) }) {
+	kitupgrade.NotifyIfAvailable(ctx, c, w)
+}
+
+// newKitChecker is indirected for tests.
+var newKitChecker = func(version string) *kitupgrade.Checker {
+	return kitupgrade.New(
+		kitupgrade.WithBinary("gym", version),
+		kitupgrade.WithGitHub("hop-top/gym"),
+	)
+}
 
 func (a *App) execCobra(args []string) error {
 	if len(args) == 1 && (args[0] == "-v" || args[0] == "--version") {
 		args = []string{"version"}
 	}
-	root := a.newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(a.Stdout)
-	root.SetErr(a.Stderr)
-	return root.Execute()
+	root := a.newKitRoot()
+	root.Cmd.SetArgs(args)
+	root.Cmd.SetOut(a.Stdout)
+	root.Cmd.SetErr(a.Stderr)
+	return root.Cmd.Execute()
 }
 
-func (a *App) newRootCmd() *cobra.Command {
-	vp := viper.New()
+// newKitRoot builds the gym root command via kit/cli, registers gym's
+// subcommands, and wires viper config + upgrade notifier into the
+// PersistentPreRunE chain.
+func (a *App) newKitRoot() *kitcli.Root {
+	root := kitcli.New(kitcli.Config{
+		Name:    "gym",
+		Version: resolveVersion(),
+		Short:   "Universal skill package manager",
+		// gym owns --config <path> (see below); suppress kit's -c/--config
+		// layering flag so the names do not collide.
+		Disable: kitcli.Disable{Config: true},
+	})
+
+	cmd := root.Cmd
+
+	// Gym-specific persistent flags layered on top of kit's globals
+	// (--format, --quiet, --no-color, --no-hints, --offline, -V, -C,
+	// --progress-format).
 	var configFile string
+	cmd.PersistentFlags().StringVar(&configFile, "config", "", "path to CLI config file")
+	cmd.PersistentFlags().String("bus", "", "event bus adapter: memory|sqlite|network (default: env-driven, else memory)")
+	cmd.PersistentFlags().Bool(eventbus.StrictKey, false, "fail-closed on policy/judgement timeouts")
+	cmd.PersistentFlags().Duration("gate-timeout", 30*time.Second, "max wait for sync gates (rsx judgement, policy guard)")
+	cmd.PersistentFlags().Bool("refresh-judgement", false, "bypass coach judgement cache (re-run rsx)")
+	cmd.PersistentFlags().Bool("insecure", false, "lower DENY verdicts to WARN (allow risky coaches/skills)")
 
-	root := &cobra.Command{
-		Use:           "gym",
-		Short:         "Universal skill package manager",
-		SilenceErrors: true,
-		SilenceUsage:  true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return a.initViper(vp, configFile)
-		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+	// Per-command viper instance; kept legacy-compatible with previous flag
+	// keys (learn.global, learn.path, learn.agents, train.no_global) so user
+	// configs keep working.
+	vp := viper.New()
+
+	// Capture theme + no-color on the App so interactive commands can
+	// reuse them without re-deriving them from viper.
+	a.theme = root.Theme
+
+	cmd.PersistentPreRunE = func(c *cobra.Command, _ []string) error {
+		if err := a.initViper(vp, configFile); err != nil {
+			return err
+		}
+		// Bind --strict to the per-command viper (and the global one
+		// for callers that read viper.GetViper() — kit/cli does).
+		if f := c.Flags().Lookup(eventbus.StrictKey); f != nil {
+			_ = vp.BindPFlag(eventbus.StrictKey, f)
+			_ = viper.BindPFlag(eventbus.StrictKey, f)
+		}
+		// Snapshot --no-color so REPL/markdown rendering matches the
+		// global flag without re-reading viper inside Bubble Tea.
+		// Read off the cobra flag (kit's own viper, not the global).
+		a.noColor, _ = c.Flags().GetBool("no-color")
+		// Attach a kit/console/progress reporter to the cmd context so
+		// RunE handlers can fish it back out via progress.FromContext.
+		// kit/cli normally wires this in its built-in PersistentPreRunE
+		// chain, but gym overrides that chain here, so we re-do the
+		// selection inline. Discard takes over when --quiet is set;
+		// JSONL otherwise when --progress-format=json or --format=json;
+		// Human is the default.
+		c.SetContext(kitprogress.WithReporter(c.Context(), resolveProgressReporter(c)))
+		// Lazily build the bus once per process. Subsequent commands
+		// in REPL mode reuse the same handle.
+		if a.bus == nil {
+			busKind, _ := c.Flags().GetString("bus")
+			b, err := eventbus.New(eventbus.Config{Adapter: eventbus.Adapter(strings.TrimSpace(busKind))})
+			if err != nil {
+				return err
+			}
+			a.bus = b
+			// Publish the boot toolspec event with the real self-spec.
+			// Walk the cobra tree and emit the toolspec.ToolSpec under
+			// the existing payload struct.
+			selfSpec := cheat.BuildSelfSpec(c.Root(), resolveVersion())
+			_ = a.bus.Publish(c.Context(), events.TopicToolspecCLIPublished,
+				events.ToolspecCLIPublishedPayload{
+					Version: resolveVersion(),
+					Spec:    selfSpec,
+				})
+			// Optional opt-in tip bridge subscriber. No-op when
+			// GYM_TIP_BUS_BRIDGE is unset.
+			a.cheatRegistryHandle = cheat.NewRegistry()
+			a.cheatRegistryHandle.Update(selfSpec, nil)
+			_ = cheat.MaybeStartBridge(a.bus, a.cheatRegistryHandle)
+			// Start the rsx-backed coach judging subscriber.
+			a.judge = judge.New(a.bus, a.Logger(),
+				judge.WithRefreshFunc(func() bool {
+					v, _ := c.Root().PersistentFlags().GetBool("refresh-judgement")
+					return v
+				}))
+			_ = a.judge.Start(c.Context())
+			// Start the CEL policy guard subscriber. Loads
+			// built-in policies + user/project overrides, then
+			// listens for install/upgrade requests.
+			if g, err := newGuardForApp(a); err == nil {
+				_ = g.Start(c.Context())
+				a.guardSub = g
+			}
+		}
+		offline, _ := c.Flags().GetBool("offline")
+		if !offline && c.Name() != "version" && c.Name() != "update" {
+			notifyUpgrade(c.Context(), newKitChecker(resolveVersion()), a.Stderr)
+		}
+		return nil
 	}
-	root.CompletionOptions.DisableDefaultCmd = true
-	root.PersistentFlags().StringVar(&configFile, "config", "", "path to CLI config file")
 
-	versionCmd := &cobra.Command{
+	cmd.AddCommand(
+		a.versionCobra(),
+		a.updateCobra(),
+		a.learnCobra(vp),
+		a.trainCobra(vp),
+		a.coachCobra(),
+		a.pathsCobra(),
+		a.serveCobra(),
+		a.tuiCobra(),
+		a.replCobra(),
+		a.warmupCobra(),
+		a.cheatCobra(),
+		a.guardCobra(),
+	)
+	return root
+}
+
+func (a *App) versionCobra() *cobra.Command {
+	return &cobra.Command{
 		Use:     "version",
 		Aliases: []string{"v"},
 		Short:   "Print version",
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.cmdVersion()
-		},
+		RunE:    func(_ *cobra.Command, _ []string) error { return a.cmdVersion() },
 	}
+}
 
-	updateCmd := &cobra.Command{
+func (a *App) updateCobra() *cobra.Command {
+	return &cobra.Command{
 		Use:   "update",
 		Short: "Refresh local registry index",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.runUpdate()
-		},
+		RunE:  func(cmd *cobra.Command, _ []string) error { return a.runUpdateCtx(cmd.Context()) },
 	}
+}
 
-	learnCmd := &cobra.Command{
+func (a *App) learnCobra(vp *viper.Viper) *cobra.Command {
+	c := &cobra.Command{
 		Use:     "learn <skill-or-url> [skill-or-url...]",
 		Aliases: []string{"install"},
 		Short:   "Install skills by name, URL, or local path",
@@ -79,17 +203,20 @@ func (a *App) newRootCmd() *cobra.Command {
 			if !cmd.Flags().Changed("agent") {
 				agents = vp.GetStringSlice("learn.agents")
 			}
-			return a.runLearn(toGlobal, pathHint, agents, args)
+			return a.runLearnCtx(cmd.Context(), toGlobal, pathHint, agents, args)
 		},
 	}
-	learnCmd.Flags().BoolP("global", "g", false, "install globally (default: install into CWD/.gym)")
-	learnCmd.Flags().String("path", "", "install path name/path override")
-	learnCmd.Flags().StringArray("agent", nil, "limit install paths by name/path pattern (prefix with ! to exclude)")
-	_ = vp.BindPFlag("learn.global", learnCmd.Flags().Lookup("global"))
-	_ = vp.BindPFlag("learn.path", learnCmd.Flags().Lookup("path"))
-	_ = vp.BindPFlag("learn.agents", learnCmd.Flags().Lookup("agent"))
+	c.Flags().BoolP("global", "g", false, "install globally (default: install into CWD/.gym)")
+	c.Flags().String("path", "", "install path name/path override")
+	c.Flags().StringArray("agent", nil, "limit install paths by name/path pattern (prefix with ! to exclude)")
+	_ = vp.BindPFlag("learn.global", c.Flags().Lookup("global"))
+	_ = vp.BindPFlag("learn.path", c.Flags().Lookup("path"))
+	_ = vp.BindPFlag("learn.agents", c.Flags().Lookup("agent"))
+	return c
+}
 
-	trainCmd := &cobra.Command{
+func (a *App) trainCobra(vp *viper.Viper) *cobra.Command {
+	c := &cobra.Command{
 		Use:     "train [pattern ...]",
 		Aliases: []string{"upgrade"},
 		Short:   "Upgrade installed skills",
@@ -99,48 +226,82 @@ func (a *App) newRootCmd() *cobra.Command {
 			if !cmd.Flags().Changed("no-global") {
 				noGlobal = vp.GetBool("train.no_global")
 			}
-			return a.runTrain(noGlobal, args)
+			return a.runTrainCtx(cmd.Context(), noGlobal, args)
 		},
 	}
-	trainCmd.Flags().Bool("no-global", false, "do not mirror global upgrades from project upgrades")
-	_ = vp.BindPFlag("train.no_global", trainCmd.Flags().Lookup("no-global"))
+	c.Flags().Bool("no-global", false, "do not mirror global upgrades from project upgrades")
+	_ = vp.BindPFlag("train.no_global", c.Flags().Lookup("no-global"))
+	return c
+}
 
+func (a *App) coachCobra() *cobra.Command {
 	coachCmd := &cobra.Command{
 		Use:   "coach",
 		Short: "Manage coach registry sources",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.runCoachList()
-		},
+		RunE:  func(_ *cobra.Command, _ []string) error { return a.runCoachList() },
 	}
-	coachHireCmd := &cobra.Command{
-		Use:   "hire <manifest-url-or-owner/repo>",
+	hire := &cobra.Command{
+		Use:   "hire [manifest-url-or-owner/repo]",
 		Short: "Add a coach source",
-		Args:  cobra.ExactArgs(1),
+		// 0 args = interactive wizard; 1 arg = legacy direct form.
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			interactive, _ := cmd.Flags().GetBool("interactive")
 			global, _ := cmd.Flags().GetBool("global")
 			name, _ := cmd.Flags().GetString("name")
 			curated, _ := cmd.Flags().GetBool("curated")
 			noUpdate, _ := cmd.Flags().GetBool("no-update")
 			force, _ := cmd.Flags().GetBool("force")
-			return a.runCoachHire(global, name, curated, noUpdate, force, args[0])
+			gateTimeout, _ := cmd.Root().PersistentFlags().GetDuration("gate-timeout")
+			insecure, _ := cmd.Root().PersistentFlags().GetBool("insecure")
+
+			ref := ""
+			if len(args) == 1 {
+				ref = args[0]
+			}
+			if ref == "" || interactive {
+				prompts, err := runCoachHireWizard(cmd.Context(), a)
+				if err != nil {
+					return err
+				}
+				ref = prompts.Ref
+				if name == "" {
+					name = prompts.Name
+				}
+				if !cmd.Flags().Changed("curated") {
+					curated = prompts.Curated
+				}
+				if !cmd.Flags().Changed("global") {
+					global = prompts.Global
+				}
+			}
+			return a.runCoachHire(cmd.Context(), coachHireOptions{
+				Global:      global,
+				Name:        name,
+				Curated:     curated,
+				NoUpdate:    noUpdate,
+				Force:       force,
+				GateTimeout: gateTimeout,
+				Insecure:    insecure,
+			}, ref)
 		},
 	}
-	coachHireCmd.Flags().BoolP("global", "g", false, "write to global (user) config")
-	coachHireCmd.Flags().String("name", "", "coach name")
-	coachHireCmd.Flags().Bool("curated", false, "mark coach as curated")
-	coachHireCmd.Flags().Bool("no-update", false, "do not run gym update after hiring")
-	coachHireCmd.Flags().Bool("force", false, "hire even if manifest cannot be fetched/validated")
-	coachListCmd := &cobra.Command{
+	hire.Flags().BoolP("global", "g", false, "write to global (user) config")
+	hire.Flags().BoolP("interactive", "i", false, "prompt for missing fields via a wizard")
+	hire.Flags().String("name", "", "coach name")
+	hire.Flags().Bool("curated", false, "mark coach as curated")
+	hire.Flags().Bool("no-update", false, "do not run gym update after hiring")
+	hire.Flags().Bool("force", false, "hire even if manifest cannot be fetched/validated")
+
+	list := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List configured coach sources",
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.runCoachList()
-		},
+		RunE:    func(_ *cobra.Command, _ []string) error { return a.runCoachList() },
 	}
-	coachDismissCmd := &cobra.Command{
+	dismiss := &cobra.Command{
 		Use:     "dismiss <name-or-url>",
 		Aliases: []string{"rm"},
 		Short:   "Remove coach source",
@@ -151,19 +312,20 @@ func (a *App) newRootCmd() *cobra.Command {
 			return a.runCoachDismiss(global, noUpdate, args[0])
 		},
 	}
-	coachDismissCmd.Flags().BoolP("global", "g", false, "dismiss from global (user) config")
-	coachDismissCmd.Flags().Bool("no-update", false, "do not run gym update after dismissing")
-	coachCmd.AddCommand(coachHireCmd, coachListCmd, coachDismissCmd)
+	dismiss.Flags().BoolP("global", "g", false, "dismiss from global (user) config")
+	dismiss.Flags().Bool("no-update", false, "do not run gym update after dismissing")
+	coachCmd.AddCommand(hire, list, dismiss)
+	return coachCmd
+}
 
-	pathsCmd := &cobra.Command{
+func (a *App) pathsCobra() *cobra.Command {
+	paths := &cobra.Command{
 		Use:   "paths",
 		Short: "List or add install paths",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.runPathsList()
-		},
+		RunE:  func(_ *cobra.Command, _ []string) error { return a.runPathsList() },
 	}
-	pathsAddCmd := &cobra.Command{
+	add := &cobra.Command{
 		Use:   "add",
 		Short: "Add an install path",
 		Args:  cobra.NoArgs,
@@ -175,13 +337,16 @@ func (a *App) newRootCmd() *cobra.Command {
 			return a.runPathsAdd(scope, pathVal, name, target)
 		},
 	}
-	pathsAddCmd.Flags().String("name", "", "path alias name")
-	pathsAddCmd.Flags().String("scope", "global", "global|project")
-	pathsAddCmd.Flags().String("path", "", "filesystem path")
-	pathsAddCmd.Flags().String("target", "", "config target: user|project")
-	pathsCmd.AddCommand(pathsAddCmd)
+	add.Flags().String("name", "", "path alias name")
+	add.Flags().String("scope", "global", "global|project")
+	add.Flags().String("path", "", "filesystem path")
+	add.Flags().String("target", "", "config target: user|project")
+	paths.AddCommand(add)
+	return paths
+}
 
-	serveCmd := &cobra.Command{
+func (a *App) serveCobra() *cobra.Command {
+	c := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve local registry endpoints",
 		Args:  cobra.NoArgs,
@@ -210,36 +375,39 @@ func (a *App) newRootCmd() *cobra.Command {
 			})
 		},
 	}
-	serveCmd.Flags().String("host", "127.0.0.1", "bind host")
-	serveCmd.Flags().Int("port", 4873, "bind port")
-	serveCmd.Flags().Bool("daemon", false, "run in background")
-	serveCmd.Flags().String("pidfile", "", "pid file path")
-	serveCmd.Flags().String("logfile", "", "log file path (daemon)")
-	serveCmd.Flags().String("name", "gym-registry", "repository.name for /skills.json")
-	serveCmd.Flags().Bool("update", false, "update registry index on start")
-	serveCmd.Flags().Duration("refresh", 0, "periodically update registry index (e.g. 10m); implies --update")
-	serveCmd.Flags().Bool("stop", false, "stop daemon using pidfile")
-	serveCmd.Flags().Bool("status", false, "show daemon status using pidfile")
+	c.Flags().String("host", "127.0.0.1", "bind host")
+	c.Flags().Int("port", 4873, "bind port")
+	c.Flags().Bool("daemon", false, "run in background")
+	c.Flags().String("pidfile", "", "pid file path")
+	c.Flags().String("logfile", "", "log file path (daemon)")
+	c.Flags().String("name", "gym-registry", "repository.name for /skills.json")
+	c.Flags().Bool("update", false, "update registry index on start")
+	c.Flags().Duration("refresh", 0, "periodically update registry index (e.g. 10m); implies --update")
+	c.Flags().Bool("stop", false, "stop daemon using pidfile")
+	c.Flags().Bool("status", false, "show daemon status using pidfile")
+	return c
+}
 
-	tuiCmd := &cobra.Command{
+func (a *App) tuiCobra() *cobra.Command {
+	return &cobra.Command{
 		Use:   "tui",
 		Short: "Interactive terminal UI",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.cmdTUI()
-		},
+		RunE:  func(_ *cobra.Command, _ []string) error { return a.cmdTUI() },
 	}
+}
 
-	replCmd := &cobra.Command{
+func (a *App) replCobra() *cobra.Command {
+	return &cobra.Command{
 		Use:   "repl",
 		Short: "Interactive REPL",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.cmdREPL()
-		},
+		RunE:  func(_ *cobra.Command, _ []string) error { return a.cmdREPL() },
 	}
+}
 
-	warmupCmd := &cobra.Command{
+func (a *App) warmupCobra() *cobra.Command {
+	c := &cobra.Command{
 		Use:   "warmup",
 		Short: "Generate lightweight skill metadata for agents",
 		Long:  "Generate skill manifests for progressive disclosure (context-efficient agent startup)",
@@ -247,27 +415,14 @@ func (a *App) newRootCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, _ := cmd.Flags().GetString("format")
 			scope, _ := cmd.Flags().GetString("scope")
-			output, _ := cmd.Flags().GetString("output")
-			return a.runWarmup(format, scope, output)
+			out, _ := cmd.Flags().GetString("output")
+			return a.runWarmup(format, scope, out)
 		},
 	}
-	warmupCmd.Flags().String("format", "xml", "output format: xml, json, agents-md")
-	warmupCmd.Flags().String("scope", "all", "skill scope: all, global, project")
-	warmupCmd.Flags().StringP("output", "o", "", "output file (default: stdout)")
-
-	root.AddCommand(
-		versionCmd,
-		updateCmd,
-		learnCmd,
-		trainCmd,
-		coachCmd,
-		pathsCmd,
-		serveCmd,
-		tuiCmd,
-		replCmd,
-		warmupCmd,
-	)
-	return root
+	c.Flags().String("format", "xml", "output format: xml, json, agents-md")
+	c.Flags().String("scope", "all", "skill scope: all, global, project")
+	c.Flags().StringP("output", "o", "", "output file (default: stdout)")
+	return c
 }
 
 func (a *App) initViper(vp *viper.Viper, configFile string) error {
@@ -299,4 +454,60 @@ func (a *App) initViper(vp *viper.Viper, configFile string) error {
 		return err
 	}
 	return nil
+}
+
+// resolveProgressReporter mirrors kit/cli's selection logic. We re-do it
+// here because the kit hook only runs when kit owns PersistentPreRunE,
+// and gym's hook chain pre-empts that today (see the PersistentPreRunE wiring above).
+//
+// Selection rules (highest precedence first):
+//  1. --quiet → progress.Discard()
+//  2. --progress-format json → progress.JSONL(stderr)
+//  3. unset --progress-format and --format json → progress.JSONL(stderr)
+//  4. otherwise → progress.Human(stderr)
+//
+// Output goes to stderr so progress is metadata, not data.
+func resolveProgressReporter(c *cobra.Command) kitprogress.Reporter {
+	// Read directly off the cobra flag set — kit owns its own viper
+	// instance internally, so viper.GetViper() doesn't see the parsed
+	// flags. Cobra's flag values are reliable post-parse.
+	quiet, _ := c.Flags().GetBool("quiet")
+	if quiet {
+		return kitprogress.Discard()
+	}
+	w := c.ErrOrStderr()
+	if w == nil {
+		w = os.Stderr
+	}
+
+	pf := c.Flags().Lookup("progress-format")
+	progressJSON := false
+	progressUserSet := pf != nil && pf.Changed
+	if pf != nil {
+		if val, _ := c.Flags().GetString("progress-format"); val == "json" {
+			progressJSON = true
+		}
+	}
+	// --format json inherits unless --progress-format was set explicitly.
+	if !progressJSON && !progressUserSet {
+		if val, _ := c.Flags().GetString("format"); val == "json" {
+			progressJSON = true
+		}
+	}
+	if progressJSON {
+		return kitprogress.JSONL(w)
+	}
+	return kitprogress.Human(w)
+}
+
+func resolveVersion() string {
+	v := strings.TrimSpace(buildVersion)
+	if v == "" || v == "dev" {
+		fv, _, _, _ := buildInfoFallback()
+		if fv != "" {
+			return fv
+		}
+		return "dev"
+	}
+	return v
 }
