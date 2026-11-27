@@ -24,10 +24,7 @@ func DetectRoot(startDir string) (string, bool) {
 	}
 
 	for {
-		projDir := filepath.Join(cur, ProjectDirName)
-		if fileExists(filepath.Join(projDir, ProjectConfigFile)) ||
-			fileExists(filepath.Join(projDir, ProjectLegacyConfigFile)) ||
-			fileExists(filepath.Join(projDir, ProjectStateFile)) {
+		if IsRoot(cur) {
 			return cur, true
 		}
 		next := filepath.Dir(cur)
@@ -36,6 +33,15 @@ func DetectRoot(startDir string) (string, bool) {
 		}
 		cur = next
 	}
+}
+
+// IsRoot reports whether dir holds a project marker: .gym/config.yaml,
+// .gym/config.json or .gym/installed.json.
+func IsRoot(dir string) bool {
+	projDir := filepath.Join(dir, ProjectDirName)
+	return fileExists(filepath.Join(projDir, ProjectConfigFile)) ||
+		fileExists(filepath.Join(projDir, ProjectLegacyConfigFile)) ||
+		fileExists(filepath.Join(projDir, ProjectStateFile))
 }
 
 func fileExists(path string) bool {
