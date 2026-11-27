@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,12 +15,10 @@ import (
 	kitupgrade "hop.top/kit/go/core/upgrade"
 
 	"hop.top/gym/internal/cheat"
-	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/judge"
 	"hop.top/gym/internal/project"
-	"hop.top/gym/internal/xdg"
 )
 
 // notifyUpgrade is indirected so tests can stub the kit upgrade notifier.
@@ -464,21 +461,7 @@ func (a *App) initViper(vp *viper.Viper) error {
 	vp.SetDefault("learn.agents", []string{})
 	vp.SetDefault("train.no_global", false)
 
-	vp.SetConfigName("cli")
-	vp.SetConfigType("yaml")
-	vp.AddConfigPath(filepath.Join(a.CWD, ".gym"))
-	if dirs, err := xdg.AppDirs(config.AppName); err == nil {
-		vp.AddConfigPath(dirs.ConfigHome)
-	}
-
-	if err := vp.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if errors.As(err, &notFound) {
-			return nil
-		}
-		return err
-	}
-	return nil
+	return a.loadCLIConfig(vp)
 }
 
 // resolveProgressReporter mirrors kit/cli's selection logic. We re-do it

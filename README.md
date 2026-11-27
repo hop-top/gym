@@ -161,8 +161,8 @@ Inherited from kit/console/cli: `--format`, `--cols`, `--quiet`, `--no-color`, `
 
 - Command tree and aliases are implemented with Cobra.
 - Runtime CLI overrides are loaded with Viper from:
-  - `.gym/cli.yaml` in current working directory
-  - `$XDG_CONFIG_HOME/gym/cli.yaml`
+  - `.gym/cli.yaml` in current working directory (repository content: only `learn.agents`, `train.no_global: true` and `strict: true` are honoured; every other key is ignored with `cli: ignoring project key "<key>" (user config or flags only)`)
+  - `$XDG_CONFIG_HOME/gym/cli.yaml` (unrestricted; wins over the project file; flags win over both)
 - Env overrides are supported via `GYM_*` keys (for example `GYM_LEARN_GLOBAL=true`).
 - `-c/--config` (from kit/console/cli, listed under `--help-all`) layers extra config; see Configuration.
 
