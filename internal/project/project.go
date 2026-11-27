@@ -8,11 +8,15 @@ import (
 const (
 	ProjectDirName    = ".gym"
 	ProjectConfigFile = "config.yaml"
-	ProjectStateFile  = "installed.json"
+	// ProjectLegacyConfigFile is the JSON name used before YAML became
+	// canonical; it is still read, never written.
+	ProjectLegacyConfigFile = "config.json"
+	ProjectStateFile        = "installed.json"
 )
 
 // DetectRoot walks upward from startDir and finds the nearest project root.
-// A project root is detected when .gym/config.yaml or .gym/installed.json exists.
+// A project root is detected when .gym/config.yaml, .gym/config.json or
+// .gym/installed.json exists.
 func DetectRoot(startDir string) (string, bool) {
 	cur, err := filepath.Abs(startDir)
 	if err != nil {
@@ -21,7 +25,9 @@ func DetectRoot(startDir string) (string, bool) {
 
 	for {
 		projDir := filepath.Join(cur, ProjectDirName)
-		if fileExists(filepath.Join(projDir, ProjectConfigFile)) || fileExists(filepath.Join(projDir, ProjectStateFile)) {
+		if fileExists(filepath.Join(projDir, ProjectConfigFile)) ||
+			fileExists(filepath.Join(projDir, ProjectLegacyConfigFile)) ||
+			fileExists(filepath.Join(projDir, ProjectStateFile)) {
 			return cur, true
 		}
 		next := filepath.Dir(cur)
