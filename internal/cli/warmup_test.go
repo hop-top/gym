@@ -20,7 +20,7 @@ func TestWarmupCommand_XML(t *testing.T) {
 	}
 
 	// Create test skill directory with SKILL.md
-	skillDir := filepath.Join(tmpHome, "test-skill")
+	skillDir := filepath.Join(tmpHome, ".claude", "skills", "test-skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("failed to create skill dir: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestWarmupCommand_JSON(t *testing.T) {
 	}
 
 	// Create test skill
-	skillDir := filepath.Join(tmpHome, "json-skill")
+	skillDir := filepath.Join(tmpHome, ".claude", "skills", "json-skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("failed to create skill dir: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestWarmupCommand_AgentsMD(t *testing.T) {
 	}
 
 	// Create test skill
-	skillDir := filepath.Join(tmpHome, "md-skill")
+	skillDir := filepath.Join(tmpHome, ".claude", "skills", "md-skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("failed to create skill dir: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestWarmupCommand_OutputFile(t *testing.T) {
 	}
 
 	// Create test skill
-	skillDir := filepath.Join(tmpHome, "file-skill")
+	skillDir := filepath.Join(tmpHome, ".claude", "skills", "file-skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("failed to create skill dir: %v", err)
 	}

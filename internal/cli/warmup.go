@@ -25,7 +25,7 @@ func (a *App) runWarmup(format, scope, output string) error {
 		if err != nil {
 			return fmt.Errorf("load global skills: %w", err)
 		}
-		allSkills = append(allSkills, warmup.BuildSkillInfo(globalSkills, "global")...)
+		allSkills = append(allSkills, warmup.BuildSkillInfo(a.trustedRecords(rt, globalSkills, "global"), "global")...)
 	}
 
 	// Load project skills
@@ -35,7 +35,7 @@ func (a *App) runWarmup(format, scope, output string) error {
 			if err != nil {
 				return fmt.Errorf("load project skills: %w", err)
 			}
-			allSkills = append(allSkills, warmup.BuildSkillInfo(projectSkills, "project")...)
+			allSkills = append(allSkills, warmup.BuildSkillInfo(a.trustedRecords(rt, projectSkills, "project"), "project")...)
 		}
 	}
 
