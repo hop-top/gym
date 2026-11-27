@@ -8,7 +8,7 @@
 
 Install-time checks today:
 
-- Validator: `skills-ref test {path}` (`internal/install/install.go`, `defaultValidator`). Checks SKILL.md frontmatter only. Out of scope here except that admission must not depend on it.
+- Validator: `skills-ref validate {path}` (`internal/install/install.go`, `defaultValidator`). Checks SKILL.md frontmatter only. Out of scope here except that admission must not depend on it.
 - Guard: CEL policies on `gym.skill.install.requested` (ADR-0001). Policies key on `postinstall`, `shell_hook`, `scan`, `largest_binary_bytes`, `paths`. All heuristics over strings the install pipeline lifts from staging (`internal/install/scan.go`).
 - Nothing verifies: manifest schema, content integrity, tool declarations, data classification, approval.
 
@@ -407,7 +407,7 @@ Each enforcement test is mutation-checked: remove or invert the check, confirm t
 6. Approval commands live under guard: `gym guard approve`, `gym guard revoke`.
 7. Author-set `allow_postinstall` in `internal/install/scan.go` is unchanged and tracked separately.
 8. `gym train` passes a per-skill gate.
-9. The validator default (`skills-ref test`) is unchanged and tracked separately.
+9. The validator default is out of scope here; it was corrected separately to `skills-ref validate`.
 
 ## Implementation Notes
 
