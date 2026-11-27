@@ -149,7 +149,7 @@ Deny-severity findings pick the reason (warn findings only under `--strict`, whe
 
 ### Uninstall (`gym unlearn`)
 
-Implementation: `internal/cli/unlearn.go` (command, matching, confirmation, events), `internal/install/remove.go` (`Remover`), `internal/fsutil/atomic.go` (state writes). Every directory is deleted by `Remover.RemoveSkill` only after `install.CheckRecordPath` accepts the record; there is no other deletion path. Order per record: validate, modified check (re-hash vs `state.digest`), `RemoveAll` of the validated path (already absent counts as removed), then the record leaves `installed.json` by atomic write. `Remover.OnSkillGone(name)` fires once when no record of the skill remains in the scope: the hook for lock-entry removal.
+Implementation: `internal/cli/unlearn.go` (command, matching, confirmation, events), `internal/install/remove.go` (`Remover`), `internal/fsutil/atomic.go` (state writes). Every directory is deleted by `Remover.RemoveSkill` only after `install.CheckRecordPath` accepts the record; there is no other deletion path. Order per record: validate, modified check (re-hash vs `state.digest`), `RemoveAll` of the validated path (already absent counts as removed), then the record leaves `installed.json` by atomic write. The modified check is skipped for a tree with only directories at any depth (no files, symlinks or irregular entries; symlinks are not followed), so a retry after an interrupted `RemoveAll` needs no `--force`. `Remover.OnSkillGone(name)` fires once when no record of the skill remains in the scope: the hook for lock-entry removal.
 
 | Topic | Payload |
 |-------|---------|

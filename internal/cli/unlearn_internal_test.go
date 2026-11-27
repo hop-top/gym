@@ -299,3 +299,38 @@ func TestUnlearn_DryRunPublishesNothing(t *testing.T) {
 		t.Fatalf("dry-run published %v", ue.order)
 	}
 }
+
+// The sequence seen with a read-only parent: files deleted, final rmdir
+// fails. Exit 1, record kept; the rerun needs no --force.
+func TestUnlearn_PartialRemovalRerunWithoutForce(t *testing.T) {
+	proj := unlearnProj(t)
+	learnInto(t, proj, "lint")
+	failing := filepath.Join(proj, ".a", "lint")
+	orig := unlearnRemoveAll
+	t.Cleanup(func() { unlearnRemoveAll = orig })
+	unlearnRemoveAll = func(p string) error {
+		if p != failing {
+			return os.RemoveAll(p)
+		}
+		ents, _ := os.ReadDir(p)
+		for _, e := range ents {
+			_ = os.RemoveAll(filepath.Join(p, e.Name()))
+		}
+		return errors.New("injected: rmdir permission denied")
+	}
+	var errb bytes.Buffer
+	if code := runApp(NewApp(&bytes.Buffer{}, &errb, proj), "unlearn", "lint"); code != 1 {
+		t.Fatalf("first run exit %d\n%s", code, errb.String())
+	}
+	if recs := readRecords(t, proj); len(recs) != 1 {
+		t.Fatalf("records = %v", recs)
+	}
+	unlearnRemoveAll = orig
+	errb.Reset()
+	if code := runApp(NewApp(&bytes.Buffer{}, &errb, proj), "unlearn", "lint"); code != 0 {
+		t.Fatalf("rerun exit %d\n%s", code, errb.String())
+	}
+	if _, err := os.Stat(failing); !os.IsNotExist(err) || len(readRecords(t, proj)) != 0 {
+		t.Fatal("rerun did not remove directory and record")
+	}
+}
