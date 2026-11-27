@@ -30,6 +30,11 @@ func admissionFacts(over map[string]any) map[string]any {
 		"data_class_over":      false,
 		"data_class_escalated": false,
 		"approval_state":       "approved",
+		"source_kind":          "registry",
+		"requested":            "",
+		"resolved":             "",
+		"lock_present":         false,
+		"digest_pin_conflict":  false,
 	}
 	for k, v := range over {
 		p[k] = v
@@ -62,6 +67,10 @@ func TestAdmissionPolicies_Effects(t *testing.T) {
 		// Case 18 (policy half)
 		{"data class over", map[string]any{"data_class_over": true}, "admission-data-class", guard.VerdictDeny},
 		{"digest unpinned", map[string]any{"digest_status": "unpinned", "digest_source": ""}, "admission-digest-unpinned", guard.VerdictWarn},
+		// B14 (policy half): require_pin turns unpinned into a deny, and only that rule fires.
+		{"digest required", map[string]any{"digest_status": "unpinned-required", "digest_source": ""}, "admission-digest-required", guard.VerdictDeny},
+		// B6 (policy half): lock won over a disagreeing registry digest.
+		{"digest pin conflict", map[string]any{"digest_source": "lockfile", "digest_pin_conflict": true}, "admission-digest-pin-conflict", guard.VerdictWarn},
 		{"approval unreviewed", map[string]any{"approval_state": "unreviewed"}, "admission-approval-required", guard.VerdictWarn},
 		// Case 23 (policy half)
 		{"approval enforced", map[string]any{"approval_state": "required-missing"}, "admission-approval-enforced", guard.VerdictDeny},
@@ -176,7 +185,9 @@ when: |
   size(payload.declared_tools) == 0 && size(payload.undeclared_tools) == 0 &&
   payload.data_class == '' && payload.max_data_class == '' &&
   payload.data_class_over == false && payload.data_class_escalated == false &&
-  payload.approval_state == '' && payload.folder == ''
+  payload.approval_state == '' && payload.folder == '' &&
+  payload.source_kind == '' && payload.requested == '' && payload.resolved == '' &&
+  payload.lock_present == false && payload.digest_pin_conflict == false
 effect: deny
 severity: deny
 message: defaults present

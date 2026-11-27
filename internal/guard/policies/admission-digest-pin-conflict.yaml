@@ -1,0 +1,7 @@
+name: admission-digest-pin-conflict
+when: |
+  has(payload.digest_pin_conflict) && payload.digest_pin_conflict == true
+effect: warn
+otherwise: allow
+severity: warn
+message: "lock and registry pin different digests for this version; the lock wins"

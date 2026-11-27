@@ -33,6 +33,8 @@ const (
 // undeclared tools, data class vs the operator ceiling, and approval
 // state. Ranks stay in Go; the policies see computed booleans. Folder is
 // the scope root of a project scope install (empty for global).
+// digest_source is registry|lockfile|operator; digest_status is
+// match|unpinned|unpinned-required.
 type SkillInstallRequestedPayload struct {
 	Skill              string   `json:"skill"`
 	Version            string   `json:"version,omitempty"`
@@ -56,7 +58,15 @@ type SkillInstallRequestedPayload struct {
 	DataClassOver      bool     `json:"data_class_over,omitempty"`
 	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
 	ApprovalState      string   `json:"approval_state,omitempty"`
-	RequestID          string   `json:"request_id"`
+	// Where the skill came from: registry|git|dir, what the operator pinned
+	// (version or ref), the git commit staged, whether a lock entry applied,
+	// and whether lock and registry disagreed about its digest.
+	SourceKind        string `json:"source_kind,omitempty"`
+	Requested         string `json:"requested,omitempty"`
+	Resolved          string `json:"resolved,omitempty"`
+	LockPresent       bool   `json:"lock_present,omitempty"`
+	DigestPinConflict bool   `json:"digest_pin_conflict,omitempty"`
+	RequestID         string `json:"request_id"`
 }
 
 // SkillInstallCompletedPayload is published after a successful install.
@@ -126,7 +136,15 @@ type SkillUpgradePlannedPayload struct {
 	DataClassOver      bool     `json:"data_class_over,omitempty"`
 	DataClassEscalated bool     `json:"data_class_escalated,omitempty"`
 	ApprovalState      string   `json:"approval_state,omitempty"`
-	RequestID          string   `json:"request_id"`
+	// Where the skill came from: registry|git|dir, what the operator pinned
+	// (version or ref), the git commit staged, whether a lock entry applied,
+	// and whether lock and registry disagreed about its digest.
+	SourceKind        string `json:"source_kind,omitempty"`
+	Requested         string `json:"requested,omitempty"`
+	Resolved          string `json:"resolved,omitempty"`
+	LockPresent       bool   `json:"lock_present,omitempty"`
+	DigestPinConflict bool   `json:"digest_pin_conflict,omitempty"`
+	RequestID         string `json:"request_id"`
 }
 
 // SkillUpgradeAppliedPayload is published per-skill after a successful

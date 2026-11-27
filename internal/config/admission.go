@@ -15,6 +15,17 @@ const (
 	ManifestReject = "reject"
 )
 
+// Pin requirement levels for `admission.require_pin`.
+const (
+	// PinNone: a missing digest pin is only a warning (digest-unpinned).
+	PinNone = "none"
+	// PinRemote: registry, git and archive sources need a pin from the
+	// lock, the registry, or --digest; directory sources are exempt.
+	PinRemote = "remote"
+	// PinAll: every source needs a pin.
+	PinAll = "all"
+)
+
 // AdmissionConfig tunes the install-time admission stage.
 type AdmissionConfig struct {
 	// MaxDataClass is the highest data class a skill may declare.
@@ -23,6 +34,8 @@ type AdmissionConfig struct {
 	RequireApproval bool `json:"require_approval" yaml:"require_approval"`
 	// RequireManifest is off|warn|reject for skills without gym.json.
 	RequireManifest string `json:"require_manifest" yaml:"require_manifest"`
+	// RequirePin is none|remote|all: which sources must carry a digest pin.
+	RequirePin string `json:"require_pin" yaml:"require_pin"`
 }
 
 // AdmissionOverrides is one config layer's `admission` block; nil
@@ -31,6 +44,7 @@ type AdmissionOverrides struct {
 	MaxDataClass    *string `json:"max_data_class,omitempty"`
 	RequireApproval *bool   `json:"require_approval,omitempty"`
 	RequireManifest *string `json:"require_manifest,omitempty"`
+	RequirePin      *string `json:"require_pin,omitempty"`
 }
 
 // DefaultAdmission is the effective admission config with nothing set.
@@ -38,7 +52,20 @@ func DefaultAdmission() AdmissionConfig {
 	return AdmissionConfig{
 		MaxDataClass:    dataclass.Default,
 		RequireManifest: ManifestWarn,
+		RequirePin:      PinNone,
 	}
+}
+
+func pinRank(mode string) (int, bool) {
+	switch mode {
+	case PinNone:
+		return 0, true
+	case PinRemote:
+		return 1, true
+	case PinAll:
+		return 2, true
+	}
+	return 0, false
 }
 
 func manifestRank(mode string) (int, bool) {
@@ -88,6 +115,17 @@ func ClampManifestMode(user, project string) string {
 	return user
 }
 
+// ClampRequirePin is the same rule for require_pin: a project may only
+// raise the requirement (none < remote < all).
+func ClampRequirePin(user, project string) string {
+	p, pok := pinRank(project)
+	u, uok := pinRank(user)
+	if pok && uok && p > u {
+		return project
+	}
+	return user
+}
+
 // ClampRequireApproval: a project may only turn approval on.
 func ClampRequireApproval(user, project bool) bool { return user || project }
 
@@ -112,6 +150,9 @@ func ResolveAdmission(user, project *AdmissionOverrides) (AdmissionConfig, error
 		if user.RequireManifest != nil {
 			out.RequireManifest = *user.RequireManifest
 		}
+		if user.RequirePin != nil {
+			out.RequirePin = *user.RequirePin
+		}
 	}
 	if project != nil {
 		if project.MaxDataClass != nil {
@@ -122,6 +163,9 @@ func ResolveAdmission(user, project *AdmissionOverrides) (AdmissionConfig, error
 		}
 		if project.RequireManifest != nil {
 			out.RequireManifest = ClampManifestMode(out.RequireManifest, *project.RequireManifest)
+		}
+		if project.RequirePin != nil {
+			out.RequirePin = ClampRequirePin(out.RequirePin, *project.RequirePin)
 		}
 	}
 	return out, nil
@@ -141,6 +185,11 @@ func (o *AdmissionOverrides) validate() error {
 			return fmt.Errorf("invalid admission.require_manifest %q (one of: off, warn, reject)", *o.RequireManifest)
 		}
 	}
+	if o.RequirePin != nil {
+		if _, ok := pinRank(*o.RequirePin); !ok {
+			return fmt.Errorf("invalid admission.require_pin %q (one of: none, remote, all)", *o.RequirePin)
+		}
+	}
 	return nil
 }
 
@@ -155,6 +204,11 @@ func (a AdmissionConfig) validate(allowUnset bool) error {
 	if a.RequireManifest != "" || !allowUnset {
 		if _, ok := manifestRank(a.RequireManifest); !ok {
 			return fmt.Errorf("invalid admission.require_manifest %q (one of: off, warn, reject)", a.RequireManifest)
+		}
+	}
+	if a.RequirePin != "" || !allowUnset {
+		if _, ok := pinRank(a.RequirePin); !ok {
+			return fmt.Errorf("invalid admission.require_pin %q (one of: none, remote, all)", a.RequirePin)
 		}
 	}
 	return nil

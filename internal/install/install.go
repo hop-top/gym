@@ -14,6 +14,7 @@ import (
 	"hop.top/gym/internal/config"
 	"hop.top/gym/internal/fsutil"
 	"hop.top/gym/internal/ide"
+	"hop.top/gym/internal/lock"
 	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/state"
 )
@@ -54,6 +55,17 @@ type Request struct {
 
 	// Outcome, when set, receives what staging learned about the source.
 	Outcome *Outcome
+
+	// Lock is the lock entry this install honours: its digest is the pin
+	// (outranking the registry's). Nil when no lock applies.
+	Lock *lock.Entry
+	// ExpectDigest is the operator's own pin (`learn --digest`).
+	ExpectDigest string
+	// Kind is registry|git|dir|archive, as the caller resolved the source;
+	// empty is derived from the source.
+	Kind string
+	// Requested is what the operator pinned (version after @, ref after #).
+	Requested string
 }
 
 // Outcome is what an install reports back beyond the state record.
@@ -311,7 +323,7 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return state.InstalledSkill{}, err
 	}
-	adm, err := admitStaged(req, entry, skillPath)
+	adm, err := admitStaged(req, entry, skillPath, commit)
 	if err != nil {
 		return state.InstalledSkill{}, err
 	}
@@ -369,7 +381,7 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return nil, err
 	}
-	adm, err := admitStaged(req, entry, skillPath)
+	adm, err := admitStaged(req, entry, skillPath, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -402,14 +414,35 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 }
 
 // admitStaged runs the admission stage over the staged skill.
-func admitStaged(req Request, entry registry.SkillEntry, skillPath string) (AdmissionResult, error) {
+func admitStaged(req Request, entry registry.SkillEntry, skillPath, commit string) (AdmissionResult, error) {
+	kind := req.Kind
+	if kind == "" {
+		kind = DeriveKind(entry.SourceURL, req.Ref)
+	}
 	return Admit(AdmissionInput{
 		SkillPath:         skillPath,
 		Entry:             entry,
 		Admission:         req.Config.Admission,
 		PreviousDataClass: req.PreviousDataClass,
 		ApprovalsPath:     req.ApprovalsPath,
+		ExpectDigest:      req.ExpectDigest,
+		Lock:              req.Lock,
+		SourceKind:        kind,
+		Requested:         req.Requested,
+		Commit:            commit,
 	})
+}
+
+// DeriveKind guesses the lock kind of a source nobody classified: git for
+// a URL or anything with a ref, dir for an existing directory.
+func DeriveKind(source, ref string) string {
+	switch {
+	case ref != "" || looksLikeURL(source):
+		return lock.KindGit
+	case IsDirSource(source):
+		return lock.KindDir
+	}
+	return lock.KindGit
 }
 
 // skipGitDir skips .git directories below the copy root, the same ones

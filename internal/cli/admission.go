@@ -50,6 +50,11 @@ func withAdmission(p events.SkillInstallRequestedPayload, adm install.AdmissionR
 	p.DataClassOver = adm.DataClassOver
 	p.DataClassEscalated = adm.DataClassEscalated
 	p.ApprovalState = adm.ApprovalState
+	p.SourceKind = adm.SourceKind
+	p.Requested = adm.Requested
+	p.Resolved = adm.Resolved
+	p.LockPresent = adm.LockPresent
+	p.DigestPinConflict = adm.DigestPinConflict
 	return p
 }
 

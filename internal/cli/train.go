@@ -202,6 +202,7 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		var outcome install.Outcome
 		installed, err := install.InstallSkill(ctx, install.Request{
 			Outcome:     &outcome,
+			Kind:        lock.KindRegistry,
 			Entry:       entry,
 			Source:      entry.SourceURL,
 			Scope:       item.Scope,

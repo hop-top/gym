@@ -229,6 +229,11 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"data_class_over":      p.DataClassOver,
 		"data_class_escalated": p.DataClassEscalated,
 		"approval_state":       p.ApprovalState,
+		"source_kind":          p.SourceKind,
+		"requested":            p.Requested,
+		"resolved":             p.Resolved,
+		"lock_present":         p.LockPresent,
+		"digest_pin_conflict":  p.DigestPinConflict,
 	}
 	if len(p.Paths) > 0 {
 		payload["paths"] = stringsToAny(p.Paths)
@@ -296,6 +301,11 @@ func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
 			"data_class_over":      p.DataClassOver,
 			"data_class_escalated": p.DataClassEscalated,
 			"approval_state":       p.ApprovalState,
+			"source_kind":          p.SourceKind,
+			"requested":            p.Requested,
+			"resolved":             p.Resolved,
+			"lock_present":         p.LockPresent,
+			"digest_pin_conflict":  p.DigestPinConflict,
 		},
 	}
 }

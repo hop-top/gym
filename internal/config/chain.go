@@ -13,8 +13,9 @@ import (
 // root in the chain (see scope.Chain) is read, never just the nearest, and
 // folded outermost to innermost:
 //
-//   - admission.max_data_class, require_manifest, require_approval: the
-//     Clamp* functions; an inner folder can tighten, never loosen.
+//   - admission.max_data_class, require_manifest, require_approval,
+//     require_pin: the Clamp* functions; an inner folder can tighten, never
+//     loosen.
 //   - install_paths: the innermost layer that sets it replaces the list;
 //     each entry must stay inside the folder that wrote it.
 //   - repositories, curation, upgrade: innermost wins.
@@ -52,14 +53,15 @@ func layerPaths(roots []string) []string {
 // ("" or false) leave acc alone; set values pass through the Clamp*
 // functions so an inner folder cannot undo an outer one's tightening.
 //
-// Config keys that arrive with later work (network.mode, network.allow_hosts,
-// lock.frozen, admission.require_pin) fold here too, each with its own
-// clamp, alongside these.
+// admission.require_pin folds here with ClampRequirePin. Config keys that
+// arrive with later work (network.mode, network.allow_hosts) fold here too,
+// each with its own clamp, alongside these.
 func foldAdmission(acc, layer AdmissionConfig) AdmissionConfig {
 	return AdmissionConfig{
 		MaxDataClass:    ClampMaxDataClass(acc.MaxDataClass, layer.MaxDataClass),
 		RequireManifest: ClampManifestMode(acc.RequireManifest, layer.RequireManifest),
 		RequireApproval: ClampRequireApproval(acc.RequireApproval, layer.RequireApproval),
+		RequirePin:      ClampRequirePin(acc.RequirePin, layer.RequirePin),
 	}
 }
 
