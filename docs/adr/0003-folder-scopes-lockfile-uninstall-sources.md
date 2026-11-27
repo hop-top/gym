@@ -250,13 +250,13 @@ Re-break: B5, B6, B7 (invert precedence / conflict test), B8, B10, B12, B14.
 | `--keep-lock` | Leave the lock entry |
 | `--ignore-missing` | Absent skill is not an error |
 
-Confirmation: explicit names never prompt. A glob matching more than one skill prompts on a TTY (`remove 3 skills from <root>? [y/N]`); on non-TTY without `--yes`: `confirmation-required: pattern matched 3 skills; pass --yes`. TTY test is `os.Stdin.Stat()` char-device (stdlib).
+Confirmation: explicit names never prompt. A glob matching more than one skill prompts on a TTY (`remove 3 skills from <root>? [y/N]`); on non-TTY without `--yes`: `confirmation-required: pattern matched 3 skills; pass --yes`. TTY test is `os.Stdin.Stat()` char-device (stdlib), excluding the null device (`/dev/null` is a character device but never interactive). `unlearn` acts on explicit flags only: it does not read the `learn.*` config keys. Its scope root is `--dir` or the current directory, never an inherited ancestor root.
 
 ### 3.2 What happens
 
-1. Resolve scope and records (state records whose name matches, filtered by `--path`/`--agent`). None: `skill-not-installed: lint in <root> (installed in: global)` exit 1 (`--ignore-missing`: exit 0).
+1. Resolve scope and records (state records whose name matches, filtered by `--path`/`--agent`). None: `skill-not-installed: lint in <root> (installed in: <ancestor root>, global)` (the hint names where it is recorded) exit 1 (`--ignore-missing`: exit 0).
 2. Per record validate `install_path` (section 0.2). Untrusted: record kept, that record fails.
-3. Modified check: re-hash the directory; differs from `state.digest` and no `--force`: `skill-modified: <dir> differs from recorded <digest>; --force to remove` (protects local edits).
+3. Modified check: re-hash the directory; differs from `state.digest` and no `--force`: `skill-modified: <dir> differs from recorded <digest>; --force to remove` (protects local edits). A record with no recorded digest, or a tree that cannot be hashed, cannot be verified and needs `--force`. A tree holding only directories (no files, symlinks or other entries, at any depth; symlinks not followed) has nothing to lose: the check is skipped, so a retry after an interrupted removal needs no `--force`.
 4. Remove the directory (`os.RemoveAll` of the validated path only). Already absent counts as removed.
 5. Remove the record from `installed.json` after its directory is gone. The file stays (possibly `"skills": []`): deleting it would change root detection.
 6. When no record of that name remains in the scope, remove the lock entry (unless `--keep-lock`).
@@ -265,7 +265,7 @@ Order is directory, state, lock: a crash leaves a state record without a directo
 
 Kept: approvals (operator decisions bound to digest; harmless, and re-install after uninstall stays approved), global config, the registry index. `.gym/` itself is never removed. A skill removed from one of several install paths keeps its lock entry and other records.
 
-Exit codes: 0 done / dry-run / `--ignore-missing`; 1 for every error (rule unchanged). Reason strings: `skill-not-installed`, `install-path-untrusted`, `skill-modified`, `confirmation-required`.
+Exit codes: 0 done / dry-run / `--ignore-missing`; 1 for every error (rule unchanged). Reason strings: `skill-not-installed`, `install-path-untrusted`, `skill-modified`, `confirmation-required`; plus `remove-failed` for an I/O error removing the directory or writing state (record kept).
 
 ### 3.3 Events and guard
 
@@ -388,7 +388,7 @@ Re-break: D2, D3, D4, D6, D7, D9, D11, D13.
 
 ### Rejection reasons (stable strings)
 
-New: `digest-pin-conflict` (warn finding), `digest-required`, `network-denied`, `lock-invalid`, `lock-missing`, `lock-drift`, `lock-frozen`, `lock-source-escapes`, `pin-unavailable`, `ref-not-found`, `archive-invalid`, `source-credentials-in-url`, `install-path-untrusted`, `skill-not-installed`, `skill-modified`, `confirmation-required`. Of these `install.rejected` is published for `digest-required`, `network-denied`, `lock-drift`, `lock-source-escapes`, `source-credentials-in-url` (install attempts); the rest are command errors and publish nothing (as fetch/I-O errors do today).
+New: `digest-pin-conflict` (warn finding), `digest-required`, `network-denied`, `lock-invalid`, `lock-missing`, `lock-drift`, `lock-frozen`, `lock-source-escapes`, `pin-unavailable`, `ref-not-found`, `archive-invalid`, `source-credentials-in-url`, `install-path-untrusted`, `skill-not-installed`, `skill-modified`, `confirmation-required`, `remove-failed`. Of these `install.rejected` is published for `digest-required`, `network-denied`, `lock-drift`, `lock-source-escapes`, `source-credentials-in-url` (install attempts); the rest are command errors and publish nothing (as fetch/I-O errors do today).
 
 Exit code: 1 for every error and rejection (unchanged; distinct codes remain a cross-cutting future change).
 
