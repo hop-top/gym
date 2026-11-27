@@ -11,6 +11,8 @@
 
 Universal package manager for [agentskills.io](https://agentskills.io) skills.
 
+> **Status:** Active development. Usable today, with some rough edges as features evolve.
+
 - Module/binary: `hop.top/gym` / `gym`
 - Validation gate: `skills-ref validate`
 - Supports curated registries and direct URL installs
