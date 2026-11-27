@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"hop.top/gym/internal/install"
+	"hop.top/gym/internal/lock"
 	"hop.top/gym/internal/project"
 	"hop.top/gym/internal/registry"
 	"hop.top/gym/internal/state"
@@ -161,8 +162,13 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 	})
 	emitOK(ctx, "plan", "train")
 	plan, refusedErr := a.trustedPlan(ctx, plan, rt, projectRoot)
+	locks, err := a.loadTrainLocks(rt, planScopes(plan, projectRoot))
+	if err != nil {
+		return err
+	}
+	plan, skipped := a.skipPinned(plan, locks)
 	if len(plan) == 0 {
-		if refusedErr == nil {
+		if refusedErr == nil && skipped == 0 {
 			a.printlnf("no matching installed skills to train")
 		}
 		return refusedErr
@@ -193,7 +199,9 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		}
 		pathHint := filepath.Dir(item.Skill.InstallPath)
 		reqID := newRequestID()
+		var outcome install.Outcome
 		installed, err := install.InstallSkill(ctx, install.Request{
+			Outcome:     &outcome,
 			Entry:       entry,
 			Source:      entry.SourceURL,
 			Scope:       item.Scope,
@@ -213,6 +221,9 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		}
 		emitOK(ctx, "upgrade", item.Skill.Name)
 		upgradedCount++
+		locks.replace(item.Scope, a.lockEntryFor(locks.locs[item.Scope],
+			learnTarget{Entry: entry, Kind: lock.KindRegistry}, installed, outcome.Commit))
+		a.warnNotPortable(locks.locs[item.Scope], locks.lastEntry(item.Scope, item.Skill.Name))
 		a.printlnf("upgraded %s (%s): %s -> %s", item.Skill.Name, item.Scope, item.Skill.Version, installed.Version)
 
 		if item.Scope == "global" {
@@ -236,6 +247,9 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 		if err := state.SaveProject(projectRoot, projectSkills); err != nil {
 			return err
 		}
+	}
+	if err := locks.save(); err != nil {
+		return err
 	}
 	if upgradedCount == 0 {
 		a.printlnf("no upgrades available")

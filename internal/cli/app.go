@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,10 +18,8 @@ import (
 	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/guard"
 	"hop.top/gym/internal/ide"
-	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/judge"
 	"hop.top/gym/internal/registry"
-	"hop.top/gym/internal/state"
 	"hop.top/gym/internal/xdg"
 )
 
@@ -218,98 +215,14 @@ func inferNameFromToken(token string) string {
 }
 
 // runLearn is the legacy non-context variant kept for the TUI exec path.
-// Cobra RunE handlers should call runLearnCtx so progress events flow.
+// Cobra RunE handlers should call runLearnOpts so progress events flow.
 func (a *App) runLearn(toGlobal bool, pathHint string, agentPatterns []string, tokens []string) error {
 	return a.runLearnCtx(context.Background(), toGlobal, pathHint, agentPatterns, tokens)
 }
 
-// runLearnCtx installs each token, emitting per-phase progress events
-// ("resolve", "install") via kit/console/progress.
+// runLearnCtx installs each token with default lock behaviour.
 func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, agentPatterns []string, tokens []string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if len(tokens) == 0 {
-		return errors.New("learn requires at least one skill name or URL")
-	}
-
-	if toGlobal && a.scopeDir != "" {
-		return errDirGlobal
-	}
-	rt, err := a.loadScopeAt(a.startDir(), !toGlobal)
-	if err != nil {
-		return err
-	}
-	idx, err := registry.LoadIndex(rt.Dirs.DataHome)
-	if err != nil {
-		return err
-	}
-
-	scope := "project"
-	if toGlobal {
-		scope = "global"
-	}
-
-	globalSkills, err := state.LoadGlobal(rt.Dirs.StateHome)
-	if err != nil {
-		return err
-	}
-	projectSkills := []state.InstalledSkill(nil)
-	projectRoot := a.startDir()
-	if scope == "project" {
-		a.noteNewFolderScope(rt)
-		projectSkills, err = state.LoadProject(projectRoot)
-		if err != nil {
-			return err
-		}
-	}
-
-	total := int64(len(tokens))
-	for i, tok := range tokens {
-		emitPhaseN(ctx, "resolve", tok, int64(i+1), total)
-		target, err := resolveLearnToken(tok, idx)
-		if err != nil {
-			emitFail(ctx, "resolve", tok)
-			return err
-		}
-		entry := target.Entry
-		emitOK(ctx, "resolve", tok)
-
-		emitPhaseN(ctx, "install", tok, int64(i+1), total)
-		reqID := newRequestID()
-		installedSet, err := install.InstallSkillMulti(ctx, install.Request{
-			Entry:         entry,
-			Source:        entry.SourceURL,
-			Ref:           target.Ref,
-			Scope:         scope,
-			PathHint:      pathHint,
-			AgentPatterns: agentPatterns,
-			Config:        rt.Config,
-			ProjectRoot:   projectRoot,
-			CWD:           a.CWD,
-			Gate:          a.installGate(reqID, projectRoot),
-		})
-		if err != nil {
-			emitFail(ctx, "install", tok)
-			a.publishInstallRejected(ctx, entry.Name, scope, reqID, err)
-			return err
-		}
-		emitOK(ctx, "install", tok)
-		for _, installed := range installedSet {
-			a.printlnf("installed %s %s -> %s", installed.Name, installed.Version, installed.InstallPath)
-			if scope == "global" {
-				globalSkills = state.Upsert(globalSkills, installed)
-			} else {
-				projectSkills = state.Upsert(projectSkills, installed)
-			}
-		}
-
-	}
-
-	if scope == "global" {
-		return state.SaveGlobal(rt.Dirs.StateHome, globalSkills)
-	}
-	return state.SaveProject(projectRoot, projectSkills)
+	return a.runLearnOpts(ctx, learnOpts{Global: toGlobal, PathHint: pathHint, Agents: agentPatterns, Tokens: tokens})
 }
 
 func isExistingDir(path string) bool {
