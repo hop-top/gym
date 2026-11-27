@@ -28,8 +28,10 @@ type Manifest struct {
 }
 
 // rawManifest is the on-disk shape. The legacy scan fields
-// (postinstall, shell_hook, allow_postinstall, large_binary) are read
-// by ScanStaging; admission only tolerates them.
+// (postinstall, shell_hook) are read by ScanStaging; admission only
+// tolerates them. allow_postinstall and large_binary are accepted for
+// compatibility but ignored everywhere: an author-set allowance never
+// weakens a guard policy.
 type rawManifest struct {
 	Schema           string    `json:"schema"`
 	AllowedTools     *[]string `json:"allowed_tools"`

@@ -1,8 +1,7 @@
 name: no-postinstall-script
 when: |
-  has(payload.postinstall) && size(payload.postinstall) > 0 &&
-  !(has(payload.allow_postinstall) && payload.allow_postinstall == true)
+  has(payload.postinstall) && size(payload.postinstall) > 0
 effect: deny
 otherwise: allow
 severity: deny
-message: manifest declares a postinstall script (pass --allow-postinstall to opt in)
+message: manifest declares a postinstall script (relax or disable this policy in your user policies to allow)

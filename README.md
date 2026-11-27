@@ -82,6 +82,7 @@ gym publishes and subscribes on `kit/runtime/bus` for decoupled coordination wit
 `gym learn` and `gym train` gate on CEL policies that catch risky patterns:
 - Baked-in policies: sudo, curl|bash, secrets, egress in hooks, large binaries, suspicious chmod, /etc/hosts edits, postinstall scripts, package installer shells.
 - `--strict` fails-closed; `--insecure` downgrades DENY to WARN.
+- Only the operator can allow a flagged install: a skill manifest cannot approve its own postinstall script or large binary (`allow_postinstall` / `large_binary` in a manifest are ignored). Relax or disable the policy in your user policies dir.
 - `gym guard list` shows effective policies; `gym guard test <skill>` dry-runs.
 - User policy overrides (redefine, `disable:`, `relax:`) in `$XDG_CONFIG_HOME/gym/policies/`. Project policies in `<root>/.gym/policies/` can only add policies; attempts to redefine, disable or relax others are ignored with a warning.
 

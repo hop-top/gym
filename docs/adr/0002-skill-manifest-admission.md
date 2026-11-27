@@ -14,7 +14,7 @@ Install-time checks today:
 
 Gaps found while reading the code:
 
-1. `ScanStaging` reads `gym.json | manifest.json | skill.json` from the skill itself, including `allow_postinstall`. Author can switch off the `no-postinstall-script` deny. Same self-approval hazard this ADR must not repeat.
+1. `ScanStaging` read `gym.json | manifest.json | skill.json` from the skill itself, including `allow_postinstall` (and `large_binary`). Author could switch off the `no-postinstall-script` / `no-large-binary` policies. Same self-approval hazard this ADR must not repeat. Closed: `ScanStaging` no longer reads either field; they are ignored and the payload keys stay always false.
 2. `gym train` gates the plan before staging (`gateUpgradePlan`: skill, scope, from, source only), then calls `InstallSkill` with no `Gate`. Upgrades never see scan data or any content-derived fact.
 3. `stageSource` returns a local directory source as-is: no copy. Validate, scan, gate, copy read the live tree at four different times (TOCTOU).
 4. Gate fails open on missing bus and on timeout unless `--strict` (`internal/guard/gate.go`). `--insecure` lowers deny to warn.
@@ -86,9 +86,10 @@ Schema (author-supplied file, closed object, `schema` required):
 | `schema` | string | Required. Exactly `gym.skill/v1`. Unknown major rejected |
 | `allowed_tools` | string[] | Required (may be empty). Tool tokens per Agent Skills syntax: `Name` or `Name(arg)`. No whitespace inside a token. No duplicates. Sorted bytewise on canonical output, any order on input |
 | `data_class` | string | Required. One of the ladder in section 4 |
-| existing `postinstall`, `shell_hook`, `large_binary` | as today | Untouched |
+| existing `postinstall`, `shell_hook` | as today | Read by `ScanStaging` |
+| legacy `allow_postinstall`, `large_binary` | bool | Accepted, ignored |
 
-Fields an author MUST NOT set: `digest`, `approval_state`, `allow_postinstall` (see gap 1). Closed-object decoding turns `digest`/`approval_state` into `manifest-invalid` with an explicit message ("set by operator, not author"). `allow_postinstall` stays as today in `ScanStaging` and is tracked separately.
+Fields an author MUST NOT set: `digest`, `approval_state`. Closed-object decoding turns `digest`/`approval_state` into `manifest-invalid` with an explicit message ("set by operator, not author"). `allow_postinstall` and `large_binary` are accepted in `gym.json` but ignored (see gap 1, closed); they never weaken a policy.
 
 Schema validation approach: Go struct + `json.Decoder.DisallowUnknownFields` + explicit checks. No new dependency. A published JSON Schema document for authors is a follow-up, not a gate. Alternative (embedded JSON Schema + validator library): rejected for v1; adds a dependency for four fields.
 
@@ -349,7 +350,7 @@ Alternatives: always reject (rejected: excludes almost all existing skills; adop
 - Tool check is consistency-only; cannot detect actual misuse. Must be documented as such, or operators will over-trust it.
 - Digest has no checkout-filter normalization; cross-platform mismatches are possible for text files.
 - Default ceiling `internal` is a stricter default than any current behavior.
-- `allow_postinstall` in the author manifest remains a self-approval channel (gap 1) until separately resolved.
+- `allow_postinstall` / `large_binary` in the author manifest are ignored; the self-approval channel (gap 1) is closed. Operators allow postinstall scripts or large binaries by relaxing or disabling the policy in their user policies dir.
 
 ### Neutral
 
@@ -405,7 +406,7 @@ Each enforcement test is mutation-checked: remove or invert the check, confirm t
 4. Exit code stays 1 for every rejection.
 5. The operator tool allowlist (`admission.allowed_tools`) is deferred.
 6. Approval commands live under guard: `gym guard approve`, `gym guard revoke`.
-7. Author-set `allow_postinstall` in `internal/install/scan.go` is unchanged and tracked separately.
+7. Author-set `allow_postinstall` / `large_binary` are no longer read by `internal/install/scan.go`; closed.
 8. `gym train` passes a per-skill gate.
 9. The validator default is out of scope here; it was corrected separately to `skills-ref validate`.
 

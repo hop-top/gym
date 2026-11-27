@@ -11,9 +11,14 @@ import (
 // ScanStaging walks a staged skill directory and lifts out the fields
 // the CEL policy guard activates on:
 //
-//   - manifest.postinstall / shell_hook / allow_postinstall / large_binary
-//     (read from gym.json, manifest.json, or skill.json at the root)
+//   - manifest.postinstall / shell_hook (read from gym.json,
+//     manifest.json, or skill.json at the root)
 //   - largest_binary_bytes (largest non-text file under the root)
+//
+// Only descriptive fields are read from the manifest. A flag that would
+// weaken a guard policy (allow_postinstall, large_binary) is never
+// taken from the package under evaluation: a manifest still carrying it
+// is ignored. Operators relax policies in their user policies dir.
 //
 // Errors walking the tree are silently swallowed: the scan is
 // best-effort and a missing dir / unreadable file should not block
@@ -39,12 +44,6 @@ func ScanStaging(root string) ScanResult {
 		}
 		if s, ok := m["shell_hook"].(string); ok {
 			out.ShellHook = s
-		}
-		if b, ok := m["allow_postinstall"].(bool); ok {
-			out.AllowPostinstall = b
-		}
-		if b, ok := m["large_binary"].(bool); ok {
-			out.LargeBinary = b
 		}
 		break
 	}

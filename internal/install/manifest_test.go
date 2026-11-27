@@ -43,6 +43,23 @@ func TestParseManifest_EmptyToolsAndLegacyFieldsAllowed(t *testing.T) {
 	}
 }
 
+// A manifest still carrying the retired author allowances is accepted
+// (not manifest-invalid); the keys are ignored.
+func TestParseManifest_AuthorAllowancesAcceptedAndIgnored(t *testing.T) {
+	for _, body := range []string{
+		`{"schema":"gym.skill/v1","allowed_tools":[],"data_class":"public","allow_postinstall":true}`,
+		`{"schema":"gym.skill/v1","allowed_tools":[],"data_class":"public","large_binary":true}`,
+	} {
+		m, err := install.ParseManifest([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if m.DataClass != "public" || len(m.AllowedTools) != 0 {
+			t.Errorf("unexpected manifest: %+v", m)
+		}
+	}
+}
+
 // Case 2: unknown top-level key.
 func TestParseManifest_UnknownKeyRejected(t *testing.T) {
 	_, err := install.ParseManifest([]byte(`{"schema":"gym.skill/v1","allowed_tools":[],"data_class":"public","extra":1}`))

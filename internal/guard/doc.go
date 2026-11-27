@@ -56,6 +56,15 @@
 // On timeout, eventbus.IsStrict(viper) decides: strict -> fail-closed
 // (deny), non-strict -> fail-open with warning.
 //
+// # Allowances
+//
+// A package never approves itself. The scanner reads only descriptive
+// manifest fields; payload.allow_postinstall and payload.large_binary
+// are always false and built-in policies do not consult them. Operators
+// who want to allow postinstall scripts or large binaries relax or
+// disable no-postinstall-script / no-large-binary via policies.yaml in
+// their user policies directory.
+//
 // # Adding a new policy
 //
 // 1. Drop a YAML file under internal/guard/policies/ with shape:
