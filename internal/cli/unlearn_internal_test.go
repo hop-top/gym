@@ -334,3 +334,18 @@ func TestUnlearn_PartialRemovalRerunWithoutForce(t *testing.T) {
 		t.Fatal("rerun did not remove directory and record")
 	}
 }
+
+func TestUnlearn_EventFolderIsResolvedDir(t *testing.T) {
+	proj := unlearnProj(t)
+	learnInto(t, proj, "lint")
+	ue := newUninstallEvents(t, scratch(t))
+	if code := runApp(ue.app, "unlearn", "--dir", proj, "lint"); code != 0 {
+		t.Fatalf("exit %d\n%s", code, ue.stderr.String())
+	}
+	time.Sleep(150 * time.Millisecond)
+	ue.mu.Lock()
+	defer ue.mu.Unlock()
+	if len(ue.req) != 1 || ue.req[0].Folder != proj || len(ue.done) != 1 || ue.done[0].Folder != proj {
+		t.Fatalf("req=%+v done=%+v", ue.req, ue.done)
+	}
+}
