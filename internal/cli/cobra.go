@@ -19,6 +19,7 @@ import (
 	"hop.top/gym/internal/eventbus"
 	"hop.top/gym/internal/events"
 	"hop.top/gym/internal/judge"
+	"hop.top/gym/internal/project"
 	"hop.top/gym/internal/xdg"
 )
 
@@ -40,9 +41,12 @@ func (a *App) execCobra(args []string) error {
 		args = []string{"version"}
 	}
 	root := a.newKitRoot()
-	root.Cmd.SetArgs(args)
+	root.SetArgs(args)
 	root.Cmd.SetOut(a.Stdout)
 	root.Cmd.SetErr(a.Stderr)
+	// Execute bypasses kit's Root.Execute; apply its help-group handling so
+	// --help-all reveals kit's hidden global flags, -c/--config included.
+	root.ApplyGroupVisibility()
 	return root.Cmd.Execute()
 }
 
@@ -54,9 +58,8 @@ func (a *App) newKitRoot() *kitcli.Root {
 		Name:    "gym",
 		Version: resolveVersion(),
 		Short:   "Universal skill package manager",
-		// gym owns --config <path> (see below); suppress kit's -c/--config
-		// layering flag so the names do not collide.
-		Disable: kitcli.Disable{Config: true},
+		// A bare directory passed to -c/--config resolves to its project config.
+		ProjectMarker: filepath.Join(project.ProjectDirName, project.ProjectConfigFile),
 	})
 
 	cmd := root.Cmd
@@ -64,8 +67,6 @@ func (a *App) newKitRoot() *kitcli.Root {
 	// Gym-specific persistent flags layered on top of kit's globals
 	// (--format, --quiet, --no-color, --no-hints, --offline, -V, -C,
 	// --progress-format).
-	var configFile string
-	cmd.PersistentFlags().StringVar(&configFile, "config", "", "path to CLI config file")
 	cmd.PersistentFlags().String("bus", "", "event bus adapter: memory|sqlite|network (default: env-driven, else memory)")
 	cmd.PersistentFlags().Bool(eventbus.StrictKey, false, "fail-closed on policy/judgement timeouts")
 	cmd.PersistentFlags().Duration("gate-timeout", 30*time.Second, "max wait for sync gates (rsx judgement, policy guard)")
@@ -82,9 +83,14 @@ func (a *App) newKitRoot() *kitcli.Root {
 	a.theme = root.Theme
 
 	cmd.PersistentPreRunE = func(c *cobra.Command, _ []string) error {
-		if err := a.initViper(vp, configFile); err != nil {
+		if err := a.initViper(vp); err != nil {
 			return err
 		}
+		paths, overrides, err := root.ConfigArgs()
+		if err != nil {
+			return err
+		}
+		a.cfgPaths, a.cfgOverrides = paths, overrides
 		// Bind --strict to the per-command viper (and the global one
 		// for callers that read viper.GetViper() — kit/cli does).
 		if f := c.Flags().Lookup(eventbus.StrictKey); f != nil {
@@ -425,7 +431,7 @@ func (a *App) warmupCobra() *cobra.Command {
 	return c
 }
 
-func (a *App) initViper(vp *viper.Viper, configFile string) error {
+func (a *App) initViper(vp *viper.Viper) error {
 	vp.SetEnvPrefix("GYM")
 	vp.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	vp.AutomaticEnv()
@@ -435,15 +441,11 @@ func (a *App) initViper(vp *viper.Viper, configFile string) error {
 	vp.SetDefault("learn.agents", []string{})
 	vp.SetDefault("train.no_global", false)
 
-	if strings.TrimSpace(configFile) != "" {
-		vp.SetConfigFile(configFile)
-	} else {
-		vp.SetConfigName("cli")
-		vp.SetConfigType("yaml")
-		vp.AddConfigPath(filepath.Join(a.CWD, ".gym"))
-		if dirs, err := xdg.AppDirs(config.AppName); err == nil {
-			vp.AddConfigPath(dirs.ConfigHome)
-		}
+	vp.SetConfigName("cli")
+	vp.SetConfigType("yaml")
+	vp.AddConfigPath(filepath.Join(a.CWD, ".gym"))
+	if dirs, err := xdg.AppDirs(config.AppName); err == nil {
+		vp.AddConfigPath(dirs.ConfigHome)
 	}
 
 	if err := vp.ReadInConfig(); err != nil {
