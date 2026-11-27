@@ -1,0 +1,7 @@
+name: admission-data-class-escalated
+when: |
+  has(payload.data_class_escalated) && payload.data_class_escalated == true
+effect: warn
+otherwise: allow
+severity: warn
+message: "upgrade raises the skill data_class above the installed version's class"

@@ -1,0 +1,7 @@
+name: admission-approval-enforced
+when: |
+  has(payload.approval_state) && payload.approval_state == 'required-missing'
+effect: deny
+otherwise: allow
+severity: deny
+message: "admission.require_approval is on and the skill has no operator approval for this digest"

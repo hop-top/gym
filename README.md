@@ -85,6 +85,24 @@ gym publishes and subscribes on `kit/runtime/bus` for decoupled coordination wit
 - `gym guard list` shows effective policies; `gym guard test <skill>` dry-runs.
 - User/project policy overrides in `$XDG_CONFIG_HOME/gym/policies/` and `<root>/.gym/policies/`.
 
+### Skill admission
+
+Every install and upgrade runs an admission stage after the validator: a SHA-256 content digest (optionally pinned by the registry entry's `digest`), the optional `gym.json` manifest (`schema`, `allowed_tools`, `data_class`), declared vs `allowed-tools` in SKILL.md, a data-class ceiling (default `internal`), and operator approval. Skills without `gym.json` still install by default, with a warning.
+
+- `gym digest <dir>` prints the digest; `--files` prints the listing.
+- `gym guard approve <skill|dir>` / `gym guard revoke <skill|dir>` record operator approval, bound to the exact digest.
+- `gym guard test <dir>` dry-runs admission and policies; `--max-data-class`, `--approval-state`, `--expect-digest` simulate operator state.
+- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`) in `config.yaml`; a project config can only tighten them. Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
+
+  ```yaml
+  admission:
+    max_data_class: confidential   # default: internal
+    require_manifest: warn         # default: warn
+    require_approval: false        # default: false
+  ```
+
+Details: [docs/user.md](docs/user.md), [ADR-0002](docs/adr/0002-skill-manifest-admission.md).
+
 ### Warmup (Progressive Disclosure)
 
 `gym warmup` generates lightweight skill metadata for context-efficient agent startup:
@@ -113,7 +131,7 @@ Implements the agentskills.io progressive disclosure pattern: agents load only n
 - if multiple install paths match the chosen scope, `gym learn` installs into all of them
 - use `--agent` patterns (or `--path`) to filter install targets
 
-Install gates on validator pass (`skills-ref test {path}` by default) and policy verdicts.
+Install gates on validator pass (`skills-ref test {path}` by default), admission checks, and policy verdicts.
 
 ### Train policy
 

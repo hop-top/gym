@@ -41,6 +41,14 @@ type Request struct {
 	// on path-allowlist see the real target. install.go calls Gate
 	// once per install path (so multi-path installs evaluate each).
 	Gate GateFunc
+
+	// PreviousDataClass is the installed version's data class on
+	// upgrade; a higher new class raises data-class-escalated.
+	PreviousDataClass string
+
+	// ApprovalsPath overrides the user-level approvals file. Empty
+	// uses the default under the gym user config dir.
+	ApprovalsPath string
 }
 
 // GateFunc is the optional pre-install policy hook. paths is the list
@@ -50,9 +58,11 @@ type Request struct {
 // before the gate runs so CEL policies that key on
 // payload.postinstall / payload.shell_hook / payload.scan /
 // payload.largest_binary_bytes can fire on real install metadata.
-// scan is the zero value for trivial source dirs. Returning a non-nil
-// error aborts the install with that error.
-type GateFunc func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan ScanResult) error
+// scan is the zero value for trivial source dirs. adm carries the
+// admission facts (digest, tool coverage, data class, approval) that
+// the admission-* policies adjudicate. Returning a non-nil error
+// aborts the install with that error.
+type GateFunc func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan ScanResult, adm AdmissionResult) error
 
 // ScanResult captures what the install-pipeline scanner extracted from
 // the staging directory before publishing gym.skill.install.requested.
@@ -333,6 +343,10 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return state.InstalledSkill{}, err
 	}
+	adm, err := admitStaged(req, entry, skillPath)
+	if err != nil {
+		return state.InstalledSkill{}, err
+	}
 
 	installPaths, err := resolveInstallPaths(req)
 	if err != nil {
@@ -343,11 +357,11 @@ func InstallSkill(ctx context.Context, req Request) (state.InstalledSkill, error
 	}
 	if req.Gate != nil {
 		scan := ScanStaging(skillPath)
-		if err := req.Gate(ctx, entry, req.Scope, []string{installPaths[0].Path}, scan); err != nil {
+		if err := req.Gate(ctx, entry, req.Scope, []string{installPaths[0].Path}, scan, adm); err != nil {
 			return state.InstalledSkill{}, err
 		}
 	}
-	return installSkillToPath(skillPath, entry, installPaths[0])
+	return installSkillToPath(skillPath, entry, installPaths[0], adm)
 }
 
 // InstallSkillMulti installs a skill into all resolved paths.
@@ -386,6 +400,10 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	if err := ValidateSkillPackage(skillPath, req.Config.Validator); err != nil {
 		return nil, err
 	}
+	adm, err := admitStaged(req, entry, skillPath)
+	if err != nil {
+		return nil, err
+	}
 
 	installPaths, err := resolveInstallPaths(req)
 	if err != nil {
@@ -398,14 +416,14 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 			paths[i] = p.Path
 		}
 		scan := ScanStaging(skillPath)
-		if err := req.Gate(ctx, entry, req.Scope, paths, scan); err != nil {
+		if err := req.Gate(ctx, entry, req.Scope, paths, scan, adm); err != nil {
 			return nil, err
 		}
 	}
 
 	installed := make([]state.InstalledSkill, 0, len(installPaths))
 	for _, p := range installPaths {
-		item, err := installSkillToPath(skillPath, entry, p)
+		item, err := installSkillToPath(skillPath, entry, p, adm)
 		if err != nil {
 			return nil, err
 		}
@@ -414,7 +432,18 @@ func InstallSkillMulti(ctx context.Context, req Request) ([]state.InstalledSkill
 	return installed, nil
 }
 
-func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath config.InstallPath) (state.InstalledSkill, error) {
+// admitStaged runs the admission stage over the staged skill.
+func admitStaged(req Request, entry registry.SkillEntry, skillPath string) (AdmissionResult, error) {
+	return Admit(AdmissionInput{
+		SkillPath:         skillPath,
+		Entry:             entry,
+		Admission:         req.Config.Admission,
+		PreviousDataClass: req.PreviousDataClass,
+		ApprovalsPath:     req.ApprovalsPath,
+	})
+}
+
+func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath config.InstallPath, adm AdmissionResult) (state.InstalledSkill, error) {
 	if err := os.MkdirAll(installPath.Path, 0o755); err != nil {
 		return state.InstalledSkill{}, err
 	}
@@ -423,6 +452,16 @@ func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath
 	if err := fsutil.CopyDir(skillPath, dest); err != nil {
 		return state.InstalledSkill{}, err
 	}
+	// The source may be a live local directory mutated since it was
+	// hashed: verify what actually landed on disk.
+	if got, err := Digest(dest); err != nil || got != adm.Digest {
+		_ = os.RemoveAll(dest)
+		if err != nil {
+			return state.InstalledSkill{}, err
+		}
+		return state.InstalledSkill{}, admissionErrorf(ReasonDigestMismatch,
+			"installed copy %s differs from admitted %s", got, adm.Digest)
+	}
 	return state.InstalledSkill{
 		Name:        entry.Name,
 		Version:     entry.Version,
@@ -430,5 +469,7 @@ func installSkillToPath(skillPath string, entry registry.SkillEntry, installPath
 		Repository:  entry.Repository,
 		InstalledAt: time.Now().UTC(),
 		InstallPath: dest,
+		Digest:      adm.Digest,
+		DataClass:   adm.DataClass,
 	}, nil
 }

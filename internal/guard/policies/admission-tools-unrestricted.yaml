@@ -1,0 +1,7 @@
+name: admission-tools-unrestricted
+when: |
+  has(payload.declared_tools) && 'Bash' in payload.declared_tools
+effect: warn
+otherwise: allow
+severity: warn
+message: "manifest declares bare Bash: any shell command is allowed"

@@ -98,6 +98,21 @@ func GateUpgrade(ctx context.Context, b *eventbus.Bus, payload events.SkillUpgra
 	return resolveVerdict(resp, err, cfg)
 }
 
+// PolicyDenyError is the typed form of ErrPolicyDeny returned for a
+// deny verdict (or a warn verdict under --strict). It keeps the
+// findings so callers can derive a rejection reason. errors.Is(err,
+// ErrPolicyDeny) holds.
+type PolicyDenyError struct {
+	Findings []events.PolicyFinding
+}
+
+func (e *PolicyDenyError) Error() string {
+	return ErrPolicyDeny.Error() + ": " + summarizeFindings(e.Findings)
+}
+
+// Unwrap lets errors.Is match ErrPolicyDeny.
+func (e *PolicyDenyError) Unwrap() error { return ErrPolicyDeny }
+
 func resolveVerdict(resp eventbus.Response, err error, cfg GateConfig) error {
 	if err != nil {
 		if errors.Is(err, eventbus.ErrTimeout) {
@@ -120,7 +135,7 @@ func resolveVerdict(resp eventbus.Response, err error, cfg GateConfig) error {
 		return nil
 	case VerdictWarn:
 		if cfg.Strict {
-			return fmt.Errorf("%w: %s", ErrPolicyDeny, summarizeFindings(p.Findings))
+			return &PolicyDenyError{Findings: p.Findings}
 		}
 		logFindings(cfg.Logger, p.Findings)
 		return nil
@@ -129,7 +144,7 @@ func resolveVerdict(resp eventbus.Response, err error, cfg GateConfig) error {
 			logFindings(cfg.Logger, p.Findings)
 			return nil
 		}
-		return fmt.Errorf("%w: %s", ErrPolicyDeny, summarizeFindings(p.Findings))
+		return &PolicyDenyError{Findings: p.Findings}
 	default:
 		// Unknown verdict — fail-closed under strict, fail-open
 		// otherwise (defensive).

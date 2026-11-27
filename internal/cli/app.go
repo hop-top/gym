@@ -71,6 +71,9 @@ type App struct {
 	// guardSub is the CEL policy guard subscriber. Lazy: started
 	// once per process inside PersistentPreRunE.
 	guardSub *guard.Guard
+
+	// maxDataClass is the --max-data-class override.
+	maxDataClass string
 }
 
 func NewApp(stdout, stderr io.Writer, cwd string) *App {
@@ -123,6 +126,7 @@ func (a *App) loadRuntime() (runtime, error) {
 	if err != nil {
 		return runtime{}, err
 	}
+	a.applyAdmissionFlags(&cfg)
 	root, ok := project.DetectRoot(a.CWD)
 	return runtime{Dirs: dirs, Config: cfg, ProjectRoot: root, InProject: ok}, nil
 }
@@ -283,6 +287,7 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 		emitOK(ctx, "resolve", tok)
 
 		emitPhaseN(ctx, "install", tok, int64(i+1), total)
+		reqID := newRequestID()
 		installedSet, err := install.InstallSkillMulti(ctx, install.Request{
 			Entry:         entry,
 			Source:        entry.SourceURL,
@@ -292,10 +297,11 @@ func (a *App) runLearnCtx(ctx context.Context, toGlobal bool, pathHint string, a
 			Config:        rt.Config,
 			ProjectRoot:   projectRoot,
 			CWD:           a.CWD,
-			Gate:          a.installGate(),
+			Gate:          a.installGate(reqID),
 		})
 		if err != nil {
 			emitFail(ctx, "install", tok)
+			a.publishInstallRejected(ctx, entry.Name, scope, reqID, err)
 			return err
 		}
 		emitOK(ctx, "install", tok)
@@ -394,6 +400,7 @@ func (a *App) runTrainCtx(ctx context.Context, noGlobal bool, patterns []string)
 			continue
 		}
 		pathHint := filepath.Dir(item.Skill.InstallPath)
+		reqID := newRequestID()
 		installed, err := install.InstallSkill(ctx, install.Request{
 			Entry:       entry,
 			Source:      entry.SourceURL,
@@ -402,11 +409,14 @@ func (a *App) runTrainCtx(ctx context.Context, noGlobal bool, patterns []string)
 			Config:      rt.Config,
 			ProjectRoot: projectRoot,
 			CWD:         a.CWD,
-			// Per-skill gate is skipped here because gateUpgradePlan
-			// already evaluated the full batch above.
+			// The plan gate above sees skill/scope/from/source only; the
+			// per-skill gate sees the content-derived admission facts.
+			Gate:              a.installGate(reqID),
+			PreviousDataClass: item.Skill.DataClass,
 		})
 		if err != nil {
 			emitFail(ctx, "upgrade", item.Skill.Name)
+			a.publishInstallRejected(ctx, item.Skill.Name, item.Scope, reqID, err)
 			return err
 		}
 		emitOK(ctx, "upgrade", item.Skill.Name)

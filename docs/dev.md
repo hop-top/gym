@@ -37,7 +37,7 @@ make fmt
 - `internal/eventbus/`: kit/runtime/bus wrapper; adapter selection + request/response helpers
 - `internal/judge/`: rsx-backed coach judging subscriber; cache; subprocess driver
 - `internal/guard/`: CEL policy gate subscriber; loader for built-in + user/project policy overrides
-- `internal/guard/policies/`: baked-in CEL policies (10 default YAML files)
+- `internal/guard/policies/`: baked-in CEL policies (default YAML files, including `admission-*`)
 - `internal/cheat/`: toolspec registry builder; gym self-spec; skill specs from manifests; tip adapter writer; optional tip bridge subscriber
 - `e2e/`: integration tests with xrr cassettes (build-tag gated, `go test -tags cassettes ./e2e/...`)
 
@@ -83,8 +83,78 @@ Index storage:
   - if registry entry has `path`, use `<repo>/<path>`
   - else use repo root
 - validate using configured `validator.command` (default `skills-ref test {path}`)
+- admission (`internal/install/admission.go`, `Admit`): digest, pin, `gym.json`, tool coverage, ceiling, approval
+- gate (policies) with the admission facts
 - copy validated directory into install path:
   - destination is `<install-path>/<skill-name>`
+  - destination is re-hashed after the copy; a mismatch removes it and fails
+
+`gym train` passes a per-skill gate (request-scoped) in addition to the plan gate.
+
+## Admission
+
+Design: [ADR-0002](adr/0002-skill-manifest-admission.md). `install.Admit` is read-only and shared by install, upgrade, and `gym guard test <dir>`.
+
+Config: `admission.*` is part of `config.Config` (yaml tags, typed defaults). `loadAdmission` asks the kit loader for layers separately (defaults+system+user, then the project layer alone), tightens with `Clamp*`, then re-applies `-c <file>` and `-c key=value` on top of the clamped value; `--max-data-class` is applied last by the CLI. Layer path selection is shared with the main loader, so legacy `config.json` and previous-dir discovery apply. Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
+
+```yaml
+admission:
+  max_data_class: internal
+  require_manifest: warn
+  require_approval: false
+```
+
+Files: `internal/install/{admission,digest,manifest,tools}.go`, `internal/dataclass` (ladder), `internal/approvals` (operator store), `internal/config/admission.go`, `internal/guard/policies/admission-*.yaml`, `internal/cli/{admission,guard_admission,approvals,digest}.go`.
+
+Digest `gym.digest/v1`: regular files only under the skill root, `.git` directories skipped, symlinks rejected (`digest-unsupported-entry`); one line `<x|-> <hex> <relpath>` per file (`x` = owner-exec bit), sorted bytewise on path; digest is `sha256:` + sha256 of the listing. The expected pin comes from `install.ExpectedDigest` (registry `digest` field today; a lockfile backend would slot in ahead of it).
+
+### Hard failures and rejection reasons
+
+Hard failures are `*install.AdmissionError` (not relaxable by `--insecure`, independent of the bus):
+
+| Reason | Cause |
+|--------|-------|
+| `manifest-invalid` | `gym.json` unparsable, unknown field, operator-only field, bad schema/class/tools, or SKILL.md `allowed-tools` not a string |
+| `digest-mismatch` | pin differs from computed digest, or installed copy differs from admitted tree |
+| `digest-unsupported-entry` | symlink or irregular file in the tree |
+| `approval-revoked` | operator revoked the skill name or digest |
+
+Policy denies surface as `guard.PolicyDenyError` (`errors.Is(err, guard.ErrPolicyDeny)`). The rejection reason is the rule name minus `admission-`, except `admission-data-class` (`data-class-exceeds-ceiling`), `admission-approval-enforced` (`approval-required`), `admission-manifest-required` (`manifest-missing`). `gym.skill.install.rejected` is published once per admission failure from `learn` and `train` with `{skill, scope, reason, request_id}`; `request_id` matches the `gym.skill.install.requested` event of the same attempt (absent for hard failures, which occur before the gate). Validator failures and non-admission policy denies do not publish it.
+
+### Install-requested admission fields
+
+Added to `SkillInstallRequestedPayload` and `SkillUpgradePlannedPayload` (all `omitempty`; guard defaults every key in the CEL activation):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `manifest_present` | bool | `gym.json` found and valid |
+| `manifest_mode` | string | `admission.require_manifest`: `off`/`warn`/`reject` |
+| `digest` | string | computed `sha256:<hex>` |
+| `digest_status` | string | `match` / `unpinned` (`mismatch` is a hard failure) |
+| `digest_source` | string | `registry` / `` |
+| `declared_tools` | string[] | manifest `allowed_tools` (sorted) |
+| `undeclared_tools` | string[] | SKILL.md `allowed-tools` tokens no declared token covers |
+| `data_class` | string | manifest value or `` |
+| `max_data_class` | string | resolved ceiling |
+| `data_class_over` | bool | class ranks above the ceiling |
+| `data_class_escalated` | bool | upgrade raises the class above the installed version's |
+| `approval_state` | string | `unreviewed` / `approved` / `required-missing` (`require_approval` on and unreviewed) |
+
+### Admission policies
+
+| Policy | When | Effect |
+|--------|------|--------|
+| `admission-tools-undeclared` | `undeclared_tools` non-empty | deny |
+| `admission-data-class` | `data_class_over` | deny |
+| `admission-digest-unpinned` | `digest_status == 'unpinned'` | warn |
+| `admission-approval-required` | `approval_state == 'unreviewed'` | warn |
+| `admission-approval-enforced` | `approval_state == 'required-missing'` | deny |
+| `admission-manifest-missing` | no manifest, mode `warn` | warn |
+| `admission-manifest-required` | no manifest, mode `reject` | deny |
+| `admission-tools-unrestricted` | declared tools contain bare `Bash` | warn |
+| `admission-data-class-escalated` | `data_class_escalated` | warn |
+
+Config-driven effects (`require_approval`, `require_manifest`) change fact values, not policies, so a project policy override cannot weaken an operator setting.
 
 ## Upgrade Policy
 

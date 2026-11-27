@@ -44,13 +44,17 @@ func newGuardForApp(a *App) (*guard.Guard, error) {
 // The staging-dir scan (postinstall, shell hook, biggest binary) is
 // forwarded onto the bus payload so CEL policies that key on
 // payload.postinstall / payload.shell_hook / payload.scan /
-// payload.largest_binary_bytes fire on real install metadata.
-func (a *App) installGate() install.GateFunc {
+// payload.largest_binary_bytes fire on real install metadata, and the
+// admission facts (digest, tools, data class, approval) ride along for
+// the admission-* policies. requestID correlates the requested and
+// rejected events of one attempt.
+func (a *App) installGate(requestID string) install.GateFunc {
 	if a == nil || a.Bus() == nil {
 		return nil
 	}
-	return func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan install.ScanResult) error {
-		payload := events.SkillInstallRequestedPayload{
+	return func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan install.ScanResult, adm install.AdmissionResult) error {
+		payload := withAdmission(events.SkillInstallRequestedPayload{
+			RequestID:          requestID,
 			Skill:              entry.Name,
 			Version:            entry.Version,
 			SourceURL:          entry.SourceURL,
@@ -62,7 +66,7 @@ func (a *App) installGate() install.GateFunc {
 			LargestBinaryBytes: scan.LargestBinaryBytes,
 			AllowPostinstall:   scan.AllowPostinstall,
 			LargeBinary:        scan.LargeBinary,
-		}
+		}, adm)
 		return guard.GateInstall(ctx, a.Bus(), payload, guard.GateConfig{
 			Logger: a.Logger(),
 		})
@@ -106,14 +110,16 @@ func (a *App) guardCobra() *cobra.Command {
 		RunE:  func(cmd *cobra.Command, _ []string) error { return a.runGuardList(cmd) },
 	}
 	test := &cobra.Command{
-		Use:   "test <skill-or-manifest>",
-		Short: "Dry-run policies against a skill manifest or directory",
+		Use:   "test <skill-dir|SKILL.md|payload.json>",
+		Short: "Dry-run admission and policies against a skill directory, or policies against a JSON payload",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runGuardTest(cmd, args[0])
 		},
 	}
-	g.AddCommand(list, test)
+	test.Flags().String("approval-state", "", "simulate approval state for a skill directory: unreviewed|approved|revoked")
+	test.Flags().String("expect-digest", "", "simulate a digest pin for a skill directory (sha256:<hex>)")
+	g.AddCommand(list, test, a.approveCobra(), a.revokeCobra())
 	return g
 }
 
@@ -177,6 +183,9 @@ func (a *App) runGuardList(cmd *cobra.Command) error {
 }
 
 func (a *App) runGuardTest(cmd *cobra.Command, target string) error {
+	if dir, ok := skillDirTarget(target); ok {
+		return a.runGuardTestDir(cmd, dir)
+	}
 	eng, err := a.loadGuardEngine()
 	if err != nil {
 		return err

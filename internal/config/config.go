@@ -53,6 +53,7 @@ type Config struct {
 	Curation     CurationConfig     `json:"curation" yaml:"curation"`
 	Validator    ValidatorConfig    `json:"validator" yaml:"validator"`
 	Upgrade      UpgradeConfig      `json:"upgrade" yaml:"upgrade"`
+	Admission    AdmissionConfig    `json:"admission" yaml:"admission"`
 }
 
 func defaultConfig() Config {
@@ -69,6 +70,7 @@ func defaultConfig() Config {
 		Upgrade: UpgradeConfig{
 			MirrorGlobalFromProject: true,
 		},
+		Admission: DefaultAdmission(),
 	}
 }
 
@@ -151,6 +153,10 @@ func loadConfig(cwd string, opts kitconfig.Options, paths []string, overrides ma
 
 	var cfg Config
 	if err := kitconfig.Load(&cfg, opts); err != nil {
+		return Config{}, err
+	}
+	var err error
+	if cfg.Admission, err = loadAdmission(opts, paths, overrides); err != nil {
 		return Config{}, err
 	}
 	normalizePaths(&cfg, cwd)

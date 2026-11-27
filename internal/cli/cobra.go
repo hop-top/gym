@@ -72,6 +72,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 	cmd.PersistentFlags().Duration("gate-timeout", 30*time.Second, "max wait for sync gates (rsx judgement, policy guard)")
 	cmd.PersistentFlags().Bool("refresh-judgement", false, "bypass coach judgement cache (re-run rsx)")
 	cmd.PersistentFlags().Bool("insecure", false, "lower DENY verdicts to WARN (allow risky coaches/skills)")
+	a.registerAdmissionFlags(cmd)
 
 	// Per-command viper instance; kept legacy-compatible with previous flag
 	// keys (learn.global, learn.path, learn.agents, train.no_global) so user
@@ -167,6 +168,7 @@ func (a *App) newKitRoot() *kitcli.Root {
 		a.warmupCobra(),
 		a.cheatCobra(),
 		a.guardCobra(),
+		a.digestCobra(),
 	)
 	return root
 }

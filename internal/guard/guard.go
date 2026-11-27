@@ -211,6 +211,20 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"largest_binary_bytes": p.LargestBinaryBytes,
 		"allow_postinstall":    p.AllowPostinstall,
 		"large_binary":         p.LargeBinary,
+		// Admission facts. Defaults for every key so policies can read
+		// them without has() guards.
+		"manifest_present":     p.ManifestPresent,
+		"manifest_mode":        p.ManifestMode,
+		"digest":               p.Digest,
+		"digest_status":        p.DigestStatus,
+		"digest_source":        p.DigestSource,
+		"declared_tools":       stringsToAny(p.DeclaredTools),
+		"undeclared_tools":     stringsToAny(p.UndeclaredTools),
+		"data_class":           p.DataClass,
+		"max_data_class":       p.MaxDataClass,
+		"data_class_over":      p.DataClassOver,
+		"data_class_escalated": p.DataClassEscalated,
+		"approval_state":       p.ApprovalState,
 	}
 	if len(p.Paths) > 0 {
 		payload["paths"] = stringsToAny(p.Paths)
@@ -221,6 +235,13 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"context":   context,
 		"payload":   payload,
 	}
+}
+
+// InstallActivation builds the CEL activation for an install request.
+// Exported so `gym guard test <dir>` evaluates exactly what the install
+// gate publishes.
+func InstallActivation(p events.SkillInstallRequestedPayload) map[string]any {
+	return payloadFromInstall(p)
 }
 
 func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
@@ -257,6 +278,19 @@ func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
 			"largest_binary_bytes": p.LargestBinaryBytes,
 			"allow_postinstall":    p.AllowPostinstall,
 			"large_binary":         p.LargeBinary,
+			// Admission facts (see payloadFromInstall).
+			"manifest_present":     p.ManifestPresent,
+			"manifest_mode":        p.ManifestMode,
+			"digest":               p.Digest,
+			"digest_status":        p.DigestStatus,
+			"digest_source":        p.DigestSource,
+			"declared_tools":       stringsToAny(p.DeclaredTools),
+			"undeclared_tools":     stringsToAny(p.UndeclaredTools),
+			"data_class":           p.DataClass,
+			"max_data_class":       p.MaxDataClass,
+			"data_class_over":      p.DataClassOver,
+			"data_class_escalated": p.DataClassEscalated,
+			"approval_state":       p.ApprovalState,
 		},
 	}
 }
