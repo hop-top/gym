@@ -142,10 +142,10 @@ Inherited from kit/console/cli: `--format`, `--cols`, `--quiet`, `--no-color`, `
 
 - Command tree and aliases are implemented with Cobra.
 - Runtime CLI overrides are loaded with Viper from:
-  - `--config <file>` (if provided)
   - `.gym/cli.yaml` in current working directory
   - `$XDG_CONFIG_HOME/gym/cli.yaml`
 - Env overrides are supported via `GYM_*` keys (for example `GYM_LEARN_GLOBAL=true`).
+- `-c/--config` (from kit/console/cli, listed under `--help-all`) layers extra config; see Configuration.
 
 ### IDE/TDE path awareness
 
@@ -179,12 +179,21 @@ gym serve --stop --host 127.0.0.1 --port 4873
 
 ## Configuration
 
-User config (XDG):
-- `$XDG_CONFIG_HOME/gym/config.json`
-- fallback: `~/.config/gym/config.json`
+Config is YAML, layered lowest to highest:
+1. built-in defaults
+2. system: `/etc/gym/config.yaml`
+3. user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else the OS default: `~/.config/gym` on Linux, `~/Library/Application Support/gym` on macOS)
+4. project: nearest `.gym/config.yaml` at or above the working directory
+5. extra files: `-c <file>` (repeatable, in order; a missing file is an error)
+6. overrides: `-c key=value` (repeatable; dotted keys nest; value parses as YAML)
 
-Project config:
-- `<project-root>/.gym/config.json`
+Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
+
+```bash
+gym -c curation.min_stars=50 paths
+gym -c /path/to/extra.yaml paths
+gym -c 'install_paths=[{name: x, path: /opt/skills, scope: global}]' paths
+```
 
 Project state:
 - `<project-root>/.gym/installed.json`
@@ -195,45 +204,30 @@ Global state:
 Local registry index cache:
 - `$XDG_DATA_HOME/gym/registry-index.json`
 
-### Example `config.json`
+### Example `config.yaml`
 
-```json
-{
-  "repositories": [
-    {
-      "name": "official-curated",
-      "url": "https://registry.example.com/curated/skills.json",
-      "curated": true
-    },
-    {
-      "name": "community-pack",
-      "url": "https://example.com/community/skills.json",
-      "curated": false
-    }
-  ],
-  "install_paths": [
-    {
-      "name": "claude-global",
-      "path": "~/.claude/skills",
-      "scope": "global"
-    },
-    {
-      "name": "claude-project",
-      "path": ".claude/skills",
-      "scope": "project"
-    }
-  ],
-  "curation": {
-    "min_stars": 100
-  },
-  "validator": {
-    "command": ["skills-ref", "test", "{path}"],
-    "timeout_seconds": 20
-  },
-  "upgrade": {
-    "mirror_global_from_project": true
-  }
-}
+```yaml
+repositories:
+  - name: official-curated
+    url: https://registry.example.com/curated/skills.json
+    curated: true
+  - name: community-pack
+    url: https://example.com/community/skills.json
+    curated: false
+install_paths:
+  - name: claude-global
+    path: ~/.claude/skills
+    scope: global
+  - name: claude-project
+    path: .claude/skills
+    scope: project
+curation:
+  min_stars: 100
+validator:
+  command: [skills-ref, test, "{path}"]
+  timeout_seconds: 20
+upgrade:
+  mirror_global_from_project: true
 ```
 
 ## Repository metadata (`skills.json`)

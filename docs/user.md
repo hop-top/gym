@@ -53,10 +53,20 @@ Two scopes exist for *installed skills*:
 - `project`: installs into the current project’s configured path(s)
 
 Two scopes exist for *config*:
-- user (XDG): `~/.config/gym/config.json` (or `$XDG_CONFIG_HOME/gym/config.json`)
-- project: `<project-root>/.gym/config.json`
+- user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else `~/.config/gym` on Linux, `~/Library/Application Support/gym` on macOS)
+- project: `<project-root>/.gym/config.yaml`
 
-Project roots are detected by presence of `.gym/config.json` or `.gym/installed.json`.
+A system-wide `/etc/gym/config.yaml` is read first. Precedence, lowest to highest: defaults, system, user, project, `-c <file>`, `-c key=value`. Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
+
+Project roots are detected by presence of `.gym/config.yaml` or `.gym/installed.json`.
+
+Layer extra config for one run with `-c` (repeatable; listed in `gym --help-all`):
+
+```bash
+gym -c curation.min_stars=50 paths
+gym -c ./team.yaml paths
+gym -c 'install_paths=[{name: x, path: /opt/skills, scope: global}]' paths
+```
 
 ## Quickstart
 
@@ -134,7 +144,6 @@ Train mirror policy:
 
 You can provide CLI defaults via Viper:
 
-- `--config <file>`
 - `.gym/cli.yaml` in current working directory
 - `$XDG_CONFIG_HOME/gym/cli.yaml`
 
@@ -306,8 +315,9 @@ Most users stay on the default memory bus. Daemons and multi-host setups use SQL
 
 ## Files and Locations
 
-- User config: `$XDG_CONFIG_HOME/gym/config.json` (fallback `~/.config/gym/config.json`)
-- Project config: `<project-root>/.gym/config.json`
+- System config: `/etc/gym/config.yaml`
+- User config: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else `~/.config/gym` on Linux, `~/Library/Application Support/gym` on macOS)
+- Project config: `<project-root>/.gym/config.yaml`
 - Global state: `$XDG_STATE_HOME/gym/installed-global.json`
 - Project state: `<project-root>/.gym/installed.json`
 - Local registry cache: `$XDG_DATA_HOME/gym/registry-index.json`
