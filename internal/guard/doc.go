@@ -20,7 +20,10 @@
 // declarations. The project dir is repository content and is
 // add-only: it may add policies and disable/relax its own, but a file
 // colliding with a built-in/user policy name, or a disable:/relax:
-// entry naming a policy it did not define, is ignored with a warning.
+// entry naming a policy it did not define, is ignored with a warning. A
+// project file that fails to read, parse, validate or compile is skipped
+// with a warning and never stops the other policies from loading; the same
+// fault in the user dir or a built-in is a hard error.
 //
 // # Activation shape
 //
