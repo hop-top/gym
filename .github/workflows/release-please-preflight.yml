@@ -1,0 +1,16 @@
+name: release-please-preflight
+
+on:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  preflight:
+    permissions:
+      contents: read
+    uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
+    with:
+      # publish.yml here deploys the go-import vanity page, not a tag-driven
+      # registry publisher; point preflight at a path that does not exist so
+      # the single-language Go checks apply.
+      publish-workflow-path: .github/workflows/_no-publish.yml
