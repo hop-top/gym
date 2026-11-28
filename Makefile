@@ -3,17 +3,17 @@ BIN ?= gym
 .PHONY: build test fmt vet tidy
 
 build:
-\tgo build -o $(BIN) ./cmd/gym
+	go build -o $(BIN) ./cmd/gym
 
 test:
-\tgo test ./...
+	go test ./...
 
 fmt:
-\tgofmt -w .
+	gofmt -w .
 
 vet:
-\tgo vet ./...
+	go vet ./...
 
 tidy:
-\tgo mod tidy
+	go mod tidy
 
