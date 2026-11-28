@@ -74,7 +74,7 @@ func (a *App) installGateFor(requestID, folder, policyRoot string) install.GateF
 		return nil
 	}
 	return func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan install.ScanResult, adm install.AdmissionResult) error {
-		if skip, err := a.scopeGate(policyRoot); err != nil || skip {
+		if err := a.scopeGate(policyRoot); err != nil {
 			return err
 		}
 		payload := withAdmission(events.SkillInstallRequestedPayload{
@@ -105,7 +105,7 @@ func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem, poli
 	if a == nil || a.Bus() == nil {
 		return nil
 	}
-	if skip, err := a.scopeGate(policyRoot); err != nil || skip {
+	if err := a.scopeGate(policyRoot); err != nil {
 		return err
 	}
 	items := make([]events.UpgradePlanItem, 0, len(plan))

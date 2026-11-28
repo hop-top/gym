@@ -57,8 +57,15 @@ func (a *App) policyRoots(root string) []string {
 // scopeEngine is the engine for the scope rooted at root, built on first
 // use and reused for the rest of the process. The loading rules are
 // buildGuardEngine's alone.
+//
+// A scope whose engine cannot be built is gated by the command's own
+// (start chain) engine, never by no gate; scopeGate reports it.
 func (a *App) scopeEngine(root string) (*guard.Engine, error) {
-	return a.scopeEntry(root).result()
+	e := a.scopeEntry(root)
+	if e.err != nil && root != "" {
+		return a.scopeEngine("")
+	}
+	return e.result()
 }
 
 func (a *App) scopeEntry(root string) *guardEngineEntry {
@@ -70,7 +77,11 @@ func (a *App) scopeEntry(root string) *guardEngineEntry {
 		return e
 	}
 	e := &guardEngineEntry{}
-	e.eng, e.err = a.buildGuardEngine(roots)
+	build := a.buildGuardEngine
+	if a.engineBuild != nil {
+		build = a.engineBuild
+	}
+	e.eng, e.err = build(roots)
 	if a.engines.by == nil {
 		a.engines.by = map[string]*guardEngineEntry{}
 	}
@@ -82,29 +93,29 @@ func (e *guardEngineEntry) result() (*guard.Engine, error) { return e.eng, e.err
 
 // scopeGate decides whether an operation on the scope rooted at root can be
 // policy-gated. A guard that never started is gateUnavailable's. A scope
-// whose own policies do not load is "guard unavailable" for that scope
-// alone: denied under --strict, otherwise warned once and not gated, as
-// for a guard that failed to start. skip means do not publish the request.
-func (a *App) scopeGate(root string) (skip bool, err error) {
+// whose engine cannot be built (repository policy files are skipped, so
+// this is an I/O or user-config failure) is gated by the start-chain engine
+// instead: warned once in both modes, and denied under --strict.
+func (a *App) scopeGate(root string) error {
 	if err := a.gateUnavailable(); err != nil {
-		return false, err
+		return err
 	}
 	if root == "" || a.guardSub == nil {
-		return false, nil
+		return nil
 	}
 	e := a.scopeEntry(root)
 	if e.err == nil {
-		return false, nil
+		return nil
 	}
 	if eventbus.IsStrict(viper.GetViper()) {
-		return false, fmt.Errorf("%w: guard unavailable for scope %s: %v", guard.ErrPolicyDeny, root, e.err)
+		return fmt.Errorf("%w: guard unavailable for scope %s: %v", guard.ErrPolicyDeny, root, e.err)
 	}
 	a.engines.mu.Lock()
 	first := !e.warned
 	e.warned = true
 	a.engines.mu.Unlock()
 	if first {
-		a.Logger().Warnf("guard unavailable for scope %s; its operations are not policy-gated: %v", root, e.err)
+		a.Logger().Warnf("guard unavailable for scope %s; gating with the policies of the command's folder: %v", root, e.err)
 	}
-	return true, nil
+	return nil
 }

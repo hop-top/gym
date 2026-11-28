@@ -70,6 +70,8 @@ type App struct {
 	guardErr error
 	// engines caches the policy engines built per scope chain.
 	engines guardEngines
+	// engineBuild replaces buildGuardEngine; tests inject build failures.
+	engineBuild func(roots []string) (*guard.Engine, error)
 
 	// maxDataClass is the --max-data-class override.
 	maxDataClass string
