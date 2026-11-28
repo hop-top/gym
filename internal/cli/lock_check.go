@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"text/tabwriter"
 
 	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/lock"
+	"hop.top/gym/internal/project"
 	"hop.top/gym/internal/registry"
+	"hop.top/gym/internal/scope"
 	"hop.top/gym/internal/state"
 )
 
@@ -211,6 +214,27 @@ func (a *App) learnRestore(ctx context.Context, o learnOpts, ls learnScope) erro
 	return nil
 }
 
+// lockOnlyRoot is the nearest folder at or above the start folder whose
+// .gym holds a lock and no scope marker: a fresh clone, where installed.json
+// and skills/ are gitignored. Same walk, boundary and trust rules as the
+// scope chain; folders with a marker were already weighed by that chain.
+func (a *App) lockOnlyRoot() (string, bool) {
+	res := scope.ChainOf(a.startDir(), func(dir string) bool {
+		if project.IsRoot(dir) {
+			return false
+		}
+		fi, err := os.Stat(lock.ProjectPath(dir))
+		return err == nil && fi.Mode().IsRegular()
+	})
+	for _, w := range res.Warnings {
+		a.Logger().Warn(w)
+	}
+	if len(res.Roots) == 0 {
+		return "", false
+	}
+	return res.Roots[0], true
+}
+
 // runListCheck is `gym list --check`: the drift report of the scope
 // against its lock, exit 1 on missing, digest-drift or modified.
 func (a *App) runListCheck(global bool, format string) error {
@@ -225,7 +249,11 @@ func (a *App) runListCheck(global bool, format string) error {
 	if global {
 		ls.scope, ls.root = "global", a.startDir()
 	} else if !rt.InProject {
-		return fmt.Errorf("no folder scope at or above %s; use --dir or -g", a.startDir())
+		root, ok := a.lockOnlyRoot()
+		if !ok {
+			return fmt.Errorf("no folder scope at or above %s; use --dir or -g", a.startDir())
+		}
+		ls.root = root
 	}
 	ls.sl = a.scopeLockOf(rt, ls.scope, ls.root)
 	f, ds, err := a.lockDrift(ls)
