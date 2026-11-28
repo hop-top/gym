@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.10
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.1
 	charm.land/log/v2 v2.0.1
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
