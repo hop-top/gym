@@ -1,0 +1,11 @@
+name: no-sudo-in-scripts
+when: |
+  has(payload.scripts) && payload.scripts.exists(s,
+    s.matches('(?i)\\bsudo\\b') ||
+    s.matches('(?i)\\bdoas\\b') ||
+    s.matches('(?i)\\bpkexec\\b')
+  )
+effect: warn
+otherwise: allow
+severity: warn
+message: a script file invokes sudo/doas/pkexec

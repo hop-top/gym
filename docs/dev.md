@@ -311,7 +311,26 @@ message: "why this matched"
 
 3. Document the policy in `docs/agent.md` under the "Policy guards" section.
 
-Never derive a policy allowance from the package under evaluation: `ScanStaging` reads only descriptive manifest fields (`postinstall`, `shell_hook`) and file sizes. The `allow_postinstall` / `large_binary` payload keys stay present and always false so existing expressions keep evaluating; built-in policies do not reference them.
+Payload facts from `ScanStaging` (`internal/install/scan.go`), shared by the install gate and
+`gym guard test <dir>`:
+
+- `postinstall`, `shell_hook`: strings declared in `gym.json` (or `manifest.json`,
+  `skill.json`).
+- `scripts`: list, one entry per script file's text. Script = `#!` first line (not `.md`) or an
+  extension in `scriptExts`. SKILL.md prose is never a script.
+- `scan`: newline-joined text of every text file, SKILL.md included; secret patterns only.
+- `largest_binary_bytes`: largest binary by extension, outside `node_modules/`, `vendor/`.
+- Bounds: `MaxScanFileBytes` per file, `MaxScanTotalBytes` per field; NUL byte = binary,
+  skipped; symlinks never followed; `.git/` skipped; `node_modules/`, `vendor/` read.
+- Script-content policies are `*-in-scripts` siblings of the `postinstall` ones, effect `warn`:
+  heuristic matches never deny alone. A policy keyed on `scripts` uses
+  `payload.scripts.exists(s, s.matches(...))`; keep patterns line-scoped (`[^\n]*`).
+- Not observed: runtime behaviour, content past the caps.
+
+Never derive a policy allowance from the package under evaluation: `ScanStaging` reads only
+descriptive manifest fields (`postinstall`, `shell_hook`), file contents and file sizes. The
+`allow_postinstall` / `large_binary` payload keys stay present and always false so existing
+expressions keep evaluating; built-in policies do not reference them.
 
 User overrides in `$XDG_CONFIG_HOME/gym/policies/` can disable via `policies.yaml` (`disable: ["my-policy-name"]`), relax from deny to warn (`relax: ["my-policy-name"]`), or redefine by name. `<root>/.gym/policies/` is untrusted repository content: it can only add policies (and disable/relax its own); entries touching built-in or user policies are ignored with a logged warning (`guard.LoadOptions.Logger`). A project/folder file that fails to read, parse, validate or compile (CEL) is skipped with one warning naming it (`loadDir` with a skip callback, `compileCheck`); a broken user-dir or built-in file is a hard error.
 

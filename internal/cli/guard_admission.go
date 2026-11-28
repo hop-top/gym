@@ -108,6 +108,7 @@ func (a *App) evaluateSkillDir(dir string, opts skillDirOptions) (skillDirResult
 		Postinstall:        scan.Postinstall,
 		ShellHook:          scan.ShellHook,
 		Scan:               scan.Scan,
+		Scripts:            scan.Scripts,
 		LargestBinaryBytes: scan.LargestBinaryBytes,
 	}, adm)
 	verdict, findings := eng.Evaluate(guard.InstallActivation(payload))

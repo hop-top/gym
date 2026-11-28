@@ -1,0 +1,9 @@
+name: no-hosts-edit-in-scripts
+when: |
+  has(payload.scripts) && payload.scripts.exists(s, s.matches(
+    '(?i)(>>|>|tee|sed)[^\\n]*(/etc/hosts|/private/etc/hosts|C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts)'
+  ))
+effect: warn
+otherwise: allow
+severity: warn
+message: a script file rewrites the OS hosts file
