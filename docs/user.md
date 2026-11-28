@@ -237,6 +237,12 @@ gym learn --frozen        # verify only: fail with lock-drift, change nothing
 gym list --check          # the same report as a table (or --format json)
 ```
 
+Scope of `list --check` without `--dir` or `-g`: nearest folder scope at or above the current
+directory; none there, nearest folder at or above it holding `.gym/lock.json` (a fresh clone:
+`installed.json` and `skills/` gitignored). Same walk as the scope chain: stops at `$HOME`, skips
+an ancestor `.gym` not owned by you or writable by others. Neither found: `no folder scope at or
+above <dir>; use --dir or -g`.
+
 `gym learn` with no arguments needs a lock (`lock-missing: <path> not found`). It installs from the lock's own source at the locked commit, expects the locked digest, and does not read the registry index, so it works offline from a mirror. One failing entry does not stop the others; the exit is 1 at the end. The lock is not rewritten.
 
 Drift, as `list --check` and `learn --frozen` report it:
@@ -309,6 +315,9 @@ gym list --format json
 ```
 
 `gym list` shows one scope: the folder scope at `--dir`, else the nearest one at or above the current directory (`-g` for global). With `--effective` it shows the whole chain, the folder's own scope, its ancestors and the global scope; where several scopes hold the same name the nearest wins and the others are listed with `SHADOWED BY` (`shadowed_by` in JSON) naming the winner's folder or `global`. `--check` compares the scope (`--dir`, `-g`, or the nearest folder) with its lock instead; see [Lock and pins](#lock-and-pins). Its JSON form is `{"scope", "lock", "ok", "findings": [{"name", "status", "detail"}]}`; `--check` and `--effective` exclude each other. Columns: name, version, scope, folder, install path. JSON rows add `depth` (0 is the innermost folder; the global scope follows the last folder) and the source URL.
+
+On a fresh clone (lock committed, nothing installed) `gym list` notes `no folder scope`, while
+`gym list --check` finds the folder holding the lock and reports each locked skill `missing`.
 
 ### Warmup (Progressive Disclosure)
 

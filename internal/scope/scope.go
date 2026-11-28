@@ -28,7 +28,11 @@ type Result struct {
 // or world-writable (the analogue of git's safe.directory). Otherwise it is
 // skipped with a warning. dir itself is the operator's own choice and is not
 // tested.
-func Chain(dir string) Result {
+func Chain(dir string) Result { return ChainOf(dir, project.IsRoot) }
+
+// ChainOf is Chain with isRoot in place of the project marker test: the
+// same walk, boundary and trust rules, for folders matching another marker.
+func ChainOf(dir string, isRoot func(dir string) bool) Result {
 	var res Result
 	start, err := filepath.Abs(dir)
 	if err != nil {
@@ -37,7 +41,7 @@ func Chain(dir string) Result {
 	home := homeDir()
 	cur := start
 	for {
-		if project.IsRoot(cur) {
+		if isRoot(cur) {
 			if cur == start || trustedGymDir(cur) {
 				res.Roots = append(res.Roots, cur)
 			} else {
