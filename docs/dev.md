@@ -364,8 +364,10 @@ type MyEventPayload struct {
 ## Versioning + Releases
 
 - `gym version` reads embedded values set by ldflags (and falls back to Go build info).
+- Versions come from release-please with branch roles: `next` prereleases, `main` stable;
+  see [RELEASING.md](../RELEASING.md)
 - Releases are built via GoReleaser:
-  - tag `vX.Y.Z` triggers `.github/workflows/release.yml`
+  - tag `vX.Y.Z` (or `vX.Y.Z-rc.N` from `next`) triggers `.github/workflows/release.yml`
   - `.goreleaser.yaml` injects version/commit/date into `internal/cli`
 
 ## Vanity Go Module (Cloudflare Pages)

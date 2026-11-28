@@ -1,16 +1,67 @@
 name: release-please
 
+# The branch decides the version (target versioning, see RELEASING.md):
+#   next         -> prereleases: alpha, beta, rc on the line
+#   main         -> stable: the rc is cut to its target, stable patches only
+#   release/x.y  -> maintenance: patches only
+# One committed config on every branch; nothing is patched per branch, so
+# next -> main merges stay conflict-free.
+#
+# googleapis/release-please-action does not know `versioning: "target"`: the
+# shared workflow runs release-please with hop-top/.github's extension. It
+# also carries the per-branch concurrency guard and the release-bot App token
+# (release PRs open as the bot, so CI runs on them; the tag it pushes starts
+# release.yml). Labels come from the config.
+#
+# Pin: the full commit SHA of a hop-top/.github release that carries the
+# target-versioning extension, version in a trailing comment; `tooling-ref`
+# names the same commit. scripts/promote-release.sh and
+# release-promote-gate.yml read the pin from the `uses:` line and accept only
+# a full SHA; release-please-preflight.yml carries the same pin. Move all
+# three together (Dependabot ignores them for that reason).
+
 on:
   push:
-    branches: [main]
+    # release/<major>.<minor> only: the extension's maintenance role
+    # (^release/\d+\.\d+$). Any other release/* branch has no role and would
+    # fall back to prereleases. Filter globs: `+` repeats the preceding
+    # character class, `.` is literal.
+    branches: [main, next, 'release/[0-9]+.[0-9]+']
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
+  # workflow_dispatch runs on whatever branch it is started from, and a branch
+  # without a role falls back to prereleases: release only from main, next or
+  # release/<major>.<minor> (the push filter above, as a regex, which a job
+  # `if:` cannot express).
+  branch-role:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.role.outputs.release }}
+    steps:
+      - id: role
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" =~ ^refs/heads/(main|next|release/[0-9]+\.[0-9]+)$ ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::$REF has no release role (main, next, release/<major>.<minor>): not releasing"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release-please:
-    uses: hop-top/.github/.github/workflows/release-please-on-push.yml@v0
+    needs: branch-role
+    if: needs.branch-role.outputs.release == 'true'
+    uses: hop-top/.github/.github/workflows/release-please-on-push.yml@895393467cd6c819fb07a2ad88ca3e60e620be9a # v0.20.0
     secrets:
       RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      config-file: .github/release-please-config.json
+      manifest-file: .github/.release-please-manifest.json
+      versioning-extension: true
+      tooling-ref: 895393467cd6c819fb07a2ad88ca3e60e620be9a # v0.20.0

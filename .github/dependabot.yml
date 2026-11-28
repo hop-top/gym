@@ -3,6 +3,7 @@
 #   that PR instead of opening another. Cooldown 14d after release (every entry).
 # Security updates: immediate; cooldown never applies to them. One grouped PR
 #   per ecosystem. Needs the repo setting "Dependabot security updates".
+# Target branch: next (prereleases first; RELEASING.md).
 # Action updates regenerate the matching actions.lock entry in the same PR.
 #   Majors are ignored there: a new generation is bumped deliberately.
 version: 2
@@ -17,6 +18,7 @@ multi-ecosystem-groups:
 
 updates:
   - package-ecosystem: gomod
+    target-branch: next
     directories:
       - "/"
     multi-ecosystem-group: dependencies
@@ -31,6 +33,7 @@ updates:
           - "*"
 
   - package-ecosystem: github-actions
+    target-branch: next
     directories:
       - "/"
     multi-ecosystem-group: dependencies
@@ -46,3 +49,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
+      # The release-please pin must match `tooling-ref` and the preflight
+      # pin (see release-please.yml); moved by hand, all three together.
+      # Reusable workflows are named by their path, so match those too.
+      - dependency-name: "hop-top/.github"
+      - dependency-name: "hop-top/.github/.github/workflows/release-please-*"

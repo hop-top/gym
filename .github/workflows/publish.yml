@@ -2,7 +2,7 @@ name: Publish
 
 on:
   push:
-    branches: [main]
+    branches: [next]
   workflow_dispatch:
 
 permissions:
@@ -42,7 +42,7 @@ jobs:
 
               <meta name="go-import" content="hop.top/gym git https://github.com/hop-top/gym" />
 
-              <meta name="go-source" content="hop.top/gym https://github.com/hop-top/gym https://github.com/hop-top/gym/tree/main{/dir} https://github.com/hop-top/gym/blob/main{/dir}/{file}#L{line}" />
+              <meta name="go-source" content="hop.top/gym https://github.com/hop-top/gym https://github.com/hop-top/gym/tree/next{/dir} https://github.com/hop-top/gym/blob/next{/dir}/{file}#L{line}" />
 
               <script>
                 (function () {
