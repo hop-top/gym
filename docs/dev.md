@@ -132,7 +132,7 @@ State trust: a state record's `install_path` is used for a write or delete only 
 
 ### Lock and pins
 
-Design: [ADR-0003](adr/0003-folder-scopes-lockfile-uninstall-sources.md) section 2. `internal/lock` is the file (`gym.lock/v1`: `Parse` is strict, `Marshal` deterministic, `Save` atomic through `fsutil.WriteFileAtomic`; `SourceForLock` and `ResolveSource` store and resolve local sources, refusing absolute or escaping ones in a project lock with `lock-source-escapes`). Path: `<root>/.gym/lock.json`, global `<ConfigHome>/lock.json` (`internal/xdg`). Commands: `internal/cli/learn.go` (token flow, restore, frozen), `learn_lock.go` (lock location, writers, train pins, unlearn hook), `lock_check.go` (restore, verify, `list --check`), `learn_resolve.go` (`name@version`, `url#ref`). `internal/install/drift.go` (`LockDrift`) compares a lock with trusted state records: `missing`, `digest-drift`, `modified`, `untracked` (the first three fail).
+`internal/lock` is the file (`gym.lock/v1`: `Parse` is strict, `Marshal` deterministic, `Save` atomic through `fsutil.WriteFileAtomic`; `SourceForLock` and `ResolveSource` store and resolve local sources, refusing absolute or escaping ones in a project lock with `lock-source-escapes`). Path: `<root>/.gym/lock.json`, global `<ConfigHome>/lock.json` (`internal/xdg`). Commands: `internal/cli/learn.go` (token flow, restore, frozen), `learn_lock.go` (lock location, writers, train pins, unlearn hook), `lock_check.go` (restore, verify, `list --check`), `learn_resolve.go` (`name@version`, `url#ref`). `internal/install/drift.go` (`LockDrift`) compares a lock with trusted state records: `missing`, `digest-drift`, `modified`, `untracked` (the first three fail).
 
 Flow of `learn <name>` with a lock entry: the entry becomes the install target (`lockedTarget`: source resolved inside the scope root, `Ref` = locked commit); `Request.Lock` makes the locked digest the pin; the registry index only contributes its digest for the same version, so a disagreement is reported (`digest_pin_conflict`) and the lock still wins. `learn` with no arguments never calls `registry.LoadIndex`. The lock is written after the install directories and the state; unlearn's `OnSkillGone` hook removes an entry last.
 
@@ -154,7 +154,7 @@ Flow of `learn <name>` with a lock entry: the entry becomes the install target (
 
 ## Admission
 
-Design: [ADR-0002](adr/0002-skill-manifest-admission.md). `install.Admit` is read-only and shared by install, upgrade, and `gym guard test <dir>`.
+`install.Admit` is read-only and shared by install, upgrade, and `gym guard test <dir>`.
 
 Config: `admission.*` is part of `config.Config` (yaml tags, typed defaults). `loadAdmission` asks the kit loader for layers separately (defaults+system+user, then the project layer alone), tightens with `Clamp*`, then re-applies `-c <file>` and `-c key=value` on top of the clamped value; `--max-data-class` is applied last by the CLI. Layer path selection is shared with the main loader, so legacy `config.json` and previous-dir discovery apply. Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
 
