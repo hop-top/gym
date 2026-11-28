@@ -1,0 +1,10 @@
+name: verify-lockfile
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    uses: hop-top/.github/.github/workflows/verify-lockfile.yml@v0
