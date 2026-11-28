@@ -8,6 +8,8 @@ workflows:
         - 'actions/setup-go@v5.6.0'
     '.github/workflows/publish.yml':
         - 'actions/checkout@v4.4.0'
+    '.github/workflows/release-please-preflight.yml': []
+    '.github/workflows/release-please.yml': []
     '.github/workflows/release.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/setup-go@v5.6.0'
