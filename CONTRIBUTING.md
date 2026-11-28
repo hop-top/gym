@@ -28,6 +28,8 @@ gofmt -w .
 
 ## Pull Requests
 
+- Target `next` (the default branch). Fixes for the current stable release go to `main`;
+  see [RELEASING.md](RELEASING.md).
 - Keep changes focused; avoid drive-by refactors.
 - Add/adjust tests when changing behavior.
 - If you add a new command/flag, update `README.md`.

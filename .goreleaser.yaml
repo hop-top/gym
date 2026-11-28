@@ -34,6 +34,12 @@ archives:
         format: zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+release:
+  # release-please creates the GitHub release and its notes; goreleaser adds
+  # the archives. A version with a suffix (from next) stays a prerelease.
+  prerelease: auto
+  mode: keep-existing
+
 checksum:
   name_template: checksums.txt
 
