@@ -68,6 +68,8 @@ type App struct {
 	guardSub *guard.Guard
 	// guardErr is why guardSub could not start (nil when it did).
 	guardErr error
+	// engines caches the policy engines built per scope chain.
+	engines guardEngines
 
 	// maxDataClass is the --max-data-class override.
 	maxDataClass string

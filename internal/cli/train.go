@@ -184,7 +184,7 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 	// Gate the whole upgrade plan via the bus before mutating
 	// any filesystem. The guard publishes
 	// policy.guard.install.evaluated; we block on it.
-	if err := a.gateUpgradePlan(ctx, plan); err != nil {
+	if err := a.gateUpgradePlan(ctx, plan, projectRoot); err != nil {
 		return err
 	}
 
@@ -219,7 +219,7 @@ func (a *App) trainScope(ctx context.Context, rt runtime, idx registry.Index, o 
 			CWD:         a.CWD,
 			// The plan gate above sees skill/scope/from/source only; the
 			// per-skill gate sees the content-derived admission facts.
-			Gate:              a.installGate(reqID, item.Root),
+			Gate:              a.installGateFor(reqID, item.Root, projectRoot),
 			PreviousDataClass: item.Skill.DataClass,
 		})
 		if err != nil {
