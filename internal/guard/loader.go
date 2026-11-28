@@ -12,6 +12,7 @@ import (
 
 	charmlog "charm.land/log/v2"
 	"gopkg.in/yaml.v3"
+	"hop.top/kit/go/runtime/policy/cel"
 )
 
 // builtinFS embeds the baked-in policy YAMLs. Filename (sans .yaml)
@@ -68,7 +69,7 @@ func Load(opts LoadOptions) ([]Policy, error) {
 	}
 
 	if opts.UserDir != "" {
-		extra, err := loadDir(opts.UserDir)
+		extra, err := loadDir(opts.UserDir, nil)
 		if err != nil {
 			return nil, fmt.Errorf("guard: user overrides: %w", err)
 		}
@@ -102,10 +103,10 @@ func Load(opts LoadOptions) ([]Policy, error) {
 // loadProjectDir applies one folder's policy dir on top of policies. The
 // dir is repository content: it adds new names only.
 func loadProjectDir(policies []Policy, dir string, logger *charmlog.Logger) ([]Policy, error) {
-	extra, err := loadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("guard: project overrides: %w", err)
+	skip := func(file string, err error) {
+		warnf(logger, "guard: skipping project policy file %s: %v", file, err)
 	}
+	extra, _ := loadDir(dir, skip) // never fails with skip set
 	trusted := map[string]bool{}
 	for _, p := range policies {
 		trusted[p.Name] = true
@@ -113,6 +114,10 @@ func loadProjectDir(policies []Policy, dir string, logger *charmlog.Logger) ([]P
 	own := map[string]bool{}
 	var add []Policy
 	for _, p := range extra {
+		if err := compileCheck(p); err != nil {
+			skip(p.Source, err)
+			continue
+		}
 		if trusted[p.Name] {
 			warnf(logger, "guard: ignoring project policy %q (%s): would redefine built-in/user policy", p.Name, p.Source)
 			continue
@@ -121,10 +126,12 @@ func loadProjectDir(policies []Policy, dir string, logger *charmlog.Logger) ([]P
 		add = append(add, p)
 	}
 	policies = mergePolicies(policies, add)
+	path := filepath.Join(dir, "policies.yaml")
 	if ov, ok, err := loadOverrides(dir); err != nil {
-		return nil, fmt.Errorf("guard: project policies.yaml: %w", err)
+		// Unapplied disable/relax only keeps more policies at full
+		// strength, so skipping the file never loosens the gate.
+		skip(path, err)
 	} else if ok {
-		path := filepath.Join(dir, "policies.yaml")
 		policies = applyOverrides(policies, ov, func(kind, name string) bool {
 			if own[name] {
 				return true
@@ -134,6 +141,19 @@ func loadProjectDir(policies []Policy, dir string, logger *charmlog.Logger) ([]P
 		})
 	}
 	return policies, nil
+}
+
+// compileCheck reports whether p's expression compiles, so a policy that
+// would fail NewEngine can be skipped (project dirs) before it gets there.
+func compileCheck(p Policy) error {
+	ev, err := cel.New()
+	if err != nil {
+		return fmt.Errorf("cel env: %w", err)
+	}
+	if err := ev.Compile(p.Name, p.When); err != nil {
+		return fmt.Errorf("compile %q: %w", p.Name, err)
+	}
+	return nil
 }
 
 func warnf(l *charmlog.Logger, format string, args ...any) {
@@ -169,20 +189,32 @@ func loadBuiltins() ([]Policy, error) {
 	return out, nil
 }
 
-func loadDir(dir string) ([]Policy, error) {
+// loadDir reads every policy file of dir. With skip == nil the first failure
+// is returned (the user dir: the operator's own configuration). With skip
+// set (project and folder dirs: repository content) a file or dir that
+// fails to read, parse or validate is reported to skip and left out, and
+// the rest still load.
+func loadDir(dir string, skip func(file string, err error)) ([]Policy, error) {
+	fail := func(file string, err error) error {
+		if skip == nil {
+			return err
+		}
+		skip(file, err)
+		return nil
+	}
 	st, err := os.Stat(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fail(dir, err)
 	}
 	if !st.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", dir)
+		return nil, fail(dir, fmt.Errorf("not a directory: %s", dir))
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, fail(dir, err)
 	}
 	out := make([]Policy, 0)
 	for _, e := range entries {
@@ -192,11 +224,17 @@ func loadDir(dir string) ([]Policy, error) {
 		full := filepath.Join(dir, e.Name())
 		raw, err := os.ReadFile(full)
 		if err != nil {
-			return nil, err
+			if err := fail(full, err); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		p, err := parsePolicyBytes(raw, full, nameFromFile(e.Name()))
 		if err != nil {
-			return nil, err
+			if err := fail(full, err); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		out = append(out, p)
 	}

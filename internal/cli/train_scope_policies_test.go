@@ -194,11 +194,11 @@ func TestTrainRecursive_GlobalMirrorGatedByNestedScope(t *testing.T) {
 	}
 }
 
-// A nested scope whose policy files fail to load is "guard unavailable" for
-// that scope only: a warning without --strict (the upgrade proceeds, as for
-// a guard that failed to start), a deny under --strict. Other scopes are
-// unaffected.
-func TestTrainRecursive_BrokenNestedPolicyIsGuardUnavailableForThatScope(t *testing.T) {
+// A broken policy file in a nested scope is repository content: it is
+// skipped with a warning naming it, the rest of that scope's policies still
+// gate it, and other scopes are unaffected. Under --strict the skip does not
+// turn into a "guard unavailable".
+func TestTrainRecursive_BrokenNestedPolicyFileIsSkippedRestStillGates(t *testing.T) {
 	setup := func(t *testing.T) (root, broken string, olds map[string]string) {
 		home, seed := trainFixture(t)
 		root = filepath.Join(home, "org")
@@ -206,50 +206,61 @@ func TestTrainRecursive_BrokenNestedPolicyIsGuardUnavailableForThatScope(t *test
 		good := filepath.Join(root, "good")
 		olds = map[string]string{broken: seed(broken), good: seed(good)}
 		scopePolicy(t, broken, "bad.yaml", "name: [unclosed\n")
+		scopePolicy(t, broken, "no-new-lint.yaml", denyNew)
 		return root, broken, olds
 	}
 
 	t.Run("warns without strict", func(t *testing.T) {
 		root, broken, olds := setup(t)
 		code, _, errs := runGym(t, root, "train", "-r")
-		if code != 0 {
-			t.Fatalf("exit %d, want 0 (fail-open):\n%s", code, errs)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1 (broken scope still denied by its other policy):\n%s", code, errs)
 		}
-		if !strings.Contains(errs, "guard unavailable") || !strings.Contains(errs, "bad.yaml") {
-			t.Errorf("no warning naming the cause:\n%s", errs)
+		if !strings.Contains(errs, "skipping project policy file") || !strings.Contains(errs, "bad.yaml") {
+			t.Errorf("no skip warning naming the file:\n%s", errs)
 		}
-		for d, old := range olds {
-			if !upgraded(old) {
-				t.Errorf("%s not upgraded\n%s", d, errs)
-			}
+		if upgraded(olds[broken]) || !upgraded(olds[filepath.Join(root, "good")]) {
+			t.Errorf("gating wrong: broken upgraded=%v good upgraded=%v\n%s", upgraded(olds[broken]), upgraded(olds[filepath.Join(root, "good")]), errs)
 		}
-		_ = broken
+		if !strings.Contains(errs, "no-new-lint") {
+			t.Errorf("the scope's remaining policy did not fire:\n%s", errs)
+		}
 	})
 
-	t.Run("denies under strict", func(t *testing.T) {
+	t.Run("not guard unavailable under strict", func(t *testing.T) {
 		root, broken, olds := setup(t)
 		code, _, errs := runGym(t, root, "--strict", "train", "-r")
-		if code != 1 {
-			t.Fatalf("exit %d, want 1:\n%s", code, errs)
+		if code != 1 || upgraded(olds[broken]) {
+			t.Fatalf("exit %d broken upgraded=%v:\n%s", code, upgraded(olds[broken]), errs)
 		}
-		if upgraded(olds[broken]) {
-			t.Errorf("broken scope upgraded under --strict\n%s", errs)
+		if strings.Contains(errs, "guard unavailable") {
+			t.Errorf("a skipped repository file made the guard unavailable:\n%s", errs)
 		}
-		var line string
-		for _, l := range strings.Split(errs, "\n") {
-			if strings.Contains(l, broken) && strings.Contains(l, "guard unavailable") && strings.Contains(l, "bad.yaml") {
-				line = l
-			}
-		}
-		if line == "" {
-			t.Errorf("no per-scope denial naming the cause:\n%s", errs)
-		}
-		for _, l := range strings.Split(errs, "\n") {
-			if strings.Contains(l, filepath.Join(root, "good")) && strings.Contains(l, "guard unavailable") {
-				t.Errorf("healthy scope reported as guard unavailable: %s", l)
-			}
+		if !strings.Contains(errs, "no-new-lint") {
+			t.Errorf("remaining policy did not fire under --strict:\n%s", errs)
 		}
 	})
+}
+
+// A project's malformed policy file must not switch the guard off: a
+// curl-pipe-bash skill is denied by the built-in, without and with --strict.
+func TestLearn_MalformedProjectPolicyDoesNotDisableGuard(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "")
+	src := admSkill(t, t.TempDir(), "evil-skill", "", curlBashManifest)
+	root := scratchDir(t)
+	writeFiles(t, root, map[string]string{".gym/config.json": "{}", ".gym/policies/bad.yaml": "name: [unclosed\n"})
+	for _, flags := range [][]string{{}, {"--strict"}} {
+		dest := scratchDir(t)
+		args := append(append([]string{}, flags...), "--gate-timeout", "1s", "learn", src, "--global", "--path", dest)
+		code, _, errs := runGym(t, root, args...)
+		if code != 1 || !strings.Contains(errs, "no-curl-bash") || installed(dest, "evil-skill") {
+			t.Fatalf("%v: exit %d installed=%v\n%s", flags, code, installed(dest, "evil-skill"), errs)
+		}
+		if !strings.Contains(errs, "skipping project policy file") || strings.Contains(errs, "guard failed to start") {
+			t.Errorf("%v: expected skip warning and a running guard:\n%s", flags, errs)
+		}
+	}
 }
 
 // An ancestor scope skipped by the ownership/mode check contributes no
