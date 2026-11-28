@@ -9,217 +9,266 @@
 > force-pushed and rewritten** multiple times. Do not fork, clone, or
 > depend on this repo in any capacity until we tag a stable release.
 
-Universal package manager for [agentskills.io](https://agentskills.io) skills.
+Package manager for [agentskills.io](https://agentskills.io) skills: install, pin, vet,
+upgrade and remove skills for every agent host on a machine.
 
-- Module/binary: `hop.top/gym` / `gym`
-- Validation gate: `skills-ref validate`
-- Supports curated registries and direct URL installs
-- XDG-first paths with user + project hierarchical config
-- Scope-aware upgrades with project/global mirror policy
-- Interactive management via Charmbracelet `tui` and `repl`
+[![CI](https://github.com/hop-top/gym/actions/workflows/ci.yml/badge.svg)](https://github.com/hop-top/gym/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Install / Build
+## Why
+
+A skill is a folder. Each agent host reads its own (`~/.claude/skills`, `~/.cursor/skills`,
+…), so skills get copied by hand: no version, no record of origin, nothing checking the
+scripts they ship.
+
+gym gives skills what packages already have:
+
+- **One install, every host**: `gym learn` writes to each install path of the scope;
+  `--agent` filters them
+- **Any source**: registry name, git URL, archive, local directory; pin with `name@version`,
+  `url#ref` or `--digest`
+- **Reproducible**: a lock per scope records source, commit and content digest; `gym learn`
+  with no arguments restores it
+- **Gated**: validator, content digest, optional manifest, CEL policies and operator
+  approval run before a skill is installed
+- **Scoped**: global, project and folder scopes; inheritance resolved at read time, never
+  by copying
+- **Cheap at agent startup**: `gym warmup` emits name + description only
+
+Limits: checks are static, gym cannot observe what a skill does at runtime. The network
+policy matches host names; a firewall remains the guarantee.
+
+## Install
+
+Requirements:
+
+- Go 1.26.1+ and `git`
+- a skill validator on `PATH`. Default: `skills-ref validate`
+  ([agentskills/skills-ref](https://github.com/agentskills/agentskills/tree/main/skills-ref)).
+  Without one, installs fail with `validation failed`. Another validator: set
+  `validator.command` in user config (see [Configuration](#configuration))
 
 ```bash
 go install hop.top/gym/cmd/gym@latest
 ```
 
-Build from source:
+From source:
 
 ```bash
-go build -o gym ./cmd/gym
+make build        # go build -o gym ./cmd/gym
+```
+
+## Quickstart
+
+```bash
+gym coach hire owner/repo       # add a registry source (a skills.json); refreshes the index
+gym learn acme-auth             # install into ./.gym/skills, record in ./.gym/lock.json
+gym list                        # skills installed in this scope
+gym warmup --format agents-md   # name + description of each skill, for agent startup
+gym train                       # upgrade
+gym unlearn acme-auth           # remove
+```
+
+No registry needed:
+
+```bash
+gym learn https://github.com/acme/acme-auth-skill.git#v1.2.0   # branch, tag or commit
+gym learn ./skills/acme-auth                                   # directory
+gym learn ./acme-auth.tar.gz                                   # archive (.tar.gz, .tgz, .zip)
+gym learn -g acme-auth                                         # global scope
+```
+
+Commit `.gym/lock.json`. On a fresh clone, `gym learn` with no arguments installs the same
+bytes.
+
+## Use cases
+
+Worked examples with real output: [docs/examples.md](docs/examples.md).
+
+| Goal | Example |
+|------|---------|
+| Same skills on every clone and in CI | [Share a project's skills through the repository](docs/examples.md#1-share-a-projects-skills-through-the-repository) |
+| Claude Code, Cursor and others from one install | [One skill, several agent hosts](docs/examples.md#2-one-skill-several-agent-hosts) |
+| Hold a reviewed version, let the rest follow | [Pin some skills, track others](docs/examples.md#3-pin-some-skills-track-others) |
+| Check a skill from outside before it lands | [Vet a third-party skill before installing](docs/examples.md#4-vet-a-third-party-skill-before-installing) |
+| Company-wide, unit and project skills | [Skills per folder](docs/examples.md#5-company-unit-project-skills-per-folder) |
+| Private catalogue, machines limited to your hosts | [Run a registry for a team](docs/examples.md#6-run-a-registry-for-a-team) |
+| Small context at agent startup | [Give an agent its skill list](docs/examples.md#7-give-an-agent-its-skill-list-at-startup) |
+
+## Agent skill
+
+gym ships with a skill that teaches an agent to drive it:
+[`skills/gym-cli/SKILL.md`](skills/gym-cli/SKILL.md). One short file: when to reach for
+which command, and what `--help` does not say.
+
+Install it globally, from a checkout:
+
+```bash
+gym learn -g ./skills/gym-cli     # every detected host directory
+```
+
+Or copy it, as with any skill:
+
+```bash
+mkdir -p ~/.claude/skills
+cp -r skills/gym-cli ~/.claude/skills/
 ```
 
 ## Commands
 
-```bash
-gym version
-gym update
-gym learn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] [--no-lock] [--digest sha256:HEX] <skill[@version]|url[#ref]|dir> [...]
-gym learn [--global|-g | --dir FOLDER] [--frozen]   # no arguments: restore from the lock (--frozen: verify only)
-gym train [--dir FOLDER] [--recursive|-r [--depth N]] [--no-global] [--frozen] [pattern ...]
-gym unlearn [--global|-g | --dir FOLDER] [--path NAME_OR_PATH] [--agent PATTERN ...] [-n|--dry-run] [-y|--yes] [--force] [--ignore-missing] [--keep-lock] <name|pattern> [...]
-gym list [--global|-g | --dir FOLDER] [--effective | --check] [--format json]
-gym install ...  # alias of learn
-gym upgrade ...  # alias of train
-gym uninstall|remove|rm ...  # aliases of unlearn
-gym warmup [--format xml|json|agents-md] [--scope all|global|project] [--dir FOLDER] [--no-inherit] [-o FILE]
-gym coach hire [--global|-g] [--name NAME] [--curated] [--no-update] <manifest-url|owner/repo>
-gym coach list
-gym coach dismiss [--global|-g] [--no-update] <name|url>
-gym paths
-gym paths add [--scope global|project] [--target user|project] [--name NAME] --path PATH
-gym serve [--host 127.0.0.1] [--port 4873] [--daemon] [--pidfile PATH] [--logfile PATH]
-gym tui
-gym repl
-```
+| Command | Aliases | Purpose |
+|---------|---------|---------|
+| `learn [source ...]` | `install` | Install by name, URL, archive or directory; no arguments: restore from the lock |
+| `train [pattern ...]` | `upgrade` | Upgrade installed skills |
+| `unlearn <pattern ...>` | `uninstall`, `remove`, `rm` | Remove installed skills |
+| `list` | `ls` | List one scope; `--effective` the whole chain; `--check` drift against the lock |
+| `update` | | Refresh the local registry index |
+| `coach hire`, `coach list`, `coach dismiss` | | Manage registry sources |
+| `paths`, `paths add` | | List or add install paths |
+| `warmup` | | Skill metadata as `xml`, `json` or `agents-md` |
+| `guard list`, `guard test`, `guard approve`, `guard revoke` | | Policies, dry-run, operator approvals |
+| `digest <dir or archive>` | | Print the content digest; `--files` adds the listing |
+| `serve` | | Serve the merged index over HTTP |
+| `cheat [topic]` | | Hints for gym commands and installed skills |
+| `tui`, `repl` | | Interactive management |
+| `version`, `completion` | | Version; shell completion script |
 
-## Docs
+Flags: `gym <command> --help`. Every global flag: `gym --help-all`.
 
-- User guide: [`docs/user.md`](docs/user.md)
-- Dev guide: [`docs/dev.md`](docs/dev.md)
-- Agent notes: [`docs/agent.md`](docs/agent.md)
+### Global flags
 
-## Behavior Highlights
+| Flag | Effect |
+|------|--------|
+| `--strict` | Fail closed: warnings and gate timeouts deny |
+| `--insecure` | Lower DENY verdicts to WARN (hard failures stay) |
+| `--gate-timeout DURATION` | Max wait for a gate (coach judgement, policy guard); default `30s` |
+| `--refresh-judgement` | Bypass the coach judgement cache |
+| `--max-data-class CLASS` | Data class ceiling for admission; overrides config |
+| `--offline` | No network access (`network.mode: offline`) |
+| `--bus memory`, `sqlite` or `network` | Event bus adapter; default env-driven, else `memory` |
+| `-c, --config FILE` or `KEY=VALUE` | Layer extra config for one run (repeatable) |
 
-### Event-driven interop
+Also: `--format`, `--quiet`, `--no-color`, `--no-hints`, `-V`. Under `--help-all`: `--cols`,
+`-C`, `--progress-format` and more.
 
-gym publishes and subscribes on `kit/runtime/bus` for decoupled coordination with rsx, tip, and policy validators. All cross-tool events (coach hiring, skill installs, policy verdicts, hints) flow through the bus. Enables multi-process deployment, replay, and audit trails without tight coupling.
+## How it works
 
-### Registry update
+Full reference: [docs/user.md](docs/user.md).
 
-`gym update` refreshes local registry references and reports:
-- new skills since last update (with origin)
-- installed-skill upgrade candidates by version
+### Sources and pins
 
-### Coach judging via rsx
+- registry name from the merged local index; `name@version` pins an exact version
+- git URL (`https://`, `ssh://`, `git@`, `file://`); `url#ref` pins a branch, tag or commit
+- archive (`.tar.gz`, `.tgz`, `.zip`) as a path, `file://` URL or https URL
+- local directory
+- `--digest sha256:HEX` pins any source to its content digest
 
-`gym coach hire` now scores coaches using rsx's repository analysis:
-- Runs `rsx analyze` + `rsx policy test` (cached for 24h).
-- `--strict` fails-closed on rsx timeout; default warns and proceeds.
-- `--refresh-judgement` bypasses cache and re-runs rsx.
-- `--insecure` downgrades DENY to WARN (allow risky coaches).
-- `gym coach list` shows `score=N/100 (verdict)` per coach.
+`gym update` refreshes the index from every coach and reports new skills since the last
+update (with origin) and upgrade candidates for installed skills. Details:
+[Learn](docs/user.md#learn).
 
-### Policy guards on installs/upgrades
+### Scopes and install paths
 
-`gym learn` and `gym train` gate on CEL policies that catch risky patterns:
-- Baked-in policies: sudo, curl|bash, secrets, egress in hooks, large binaries, suspicious chmod, /etc/hosts edits, postinstall scripts, package installer shells.
-- `--strict` fails-closed; `--insecure` downgrades DENY to WARN.
-- Only the operator can allow a flagged install: a skill manifest cannot approve its own postinstall script or large binary (`allow_postinstall` / `large_binary` in a manifest are ignored). Relax or disable the policy in your user policies dir.
-- `gym guard list` shows effective policies; `gym guard test <skill>` dry-runs.
-- User policy overrides (redefine, `disable:`, `relax:`) in `$XDG_CONFIG_HOME/gym/policies/`. Project policies in `<root>/.gym/policies/` can only add policies; attempts to redefine, disable or relax others are ignored with a warning.
+- **project** (default): `CWD/.gym/skills`
+- **global** (`-g`): global install paths
+- **folder** (`--dir FOLDER`): a project scope rooted at a folder you choose, for work
+  organised as a tree (company, unit, project). Ancestors are inherited when gym reads
+  (`warmup`, `list --effective`), nearest wins
 
-### Skill admission
+With several install paths in a scope, `gym learn` installs into all of them; `--agent`
+patterns or `--path` narrow the set. `gym paths` lists configured paths and detects these
+global ones:
 
-Every install and upgrade runs an admission stage after the validator: a SHA-256 content digest (optionally pinned by the registry entry's `digest`), the optional `gym.json` manifest (`schema`, `allowed_tools`, `data_class`), declared vs `allowed-tools` in SKILL.md, a data-class ceiling (default `internal`), and operator approval. Skills without `gym.json` still install by default, with a warning.
-
-- `gym digest <dir>` prints the digest; `--files` prints the listing.
-- `gym guard approve <skill|dir>` / `gym guard revoke <skill|dir>` record operator approval, bound to the exact digest.
-- `gym guard test <dir>` dry-runs admission and policies; `--max-data-class`, `--approval-state`, `--expect-digest` simulate operator state.
-- Config `admission.max_data_class`, `admission.require_approval`, `admission.require_manifest` (`off|warn|reject`), `admission.require_pin` (`none|remote|all`) in `config.yaml`; a project config can only tighten them. The digest pin comes from `--digest`, then the lock, then the registry entry. `require_pin: remote` makes registry, git and archive sources need a pin (directories are exempt). Precedence, lowest to highest: defaults < system < user < project (clamped) < `-c <file>` < `-c key=value` < `--max-data-class`.
-
-  ```yaml
-  admission:
-    max_data_class: confidential   # default: internal
-    require_manifest: warn         # default: warn
-    require_approval: false        # default: false
-    require_pin: none              # default: none
-  lock:
-    frozen: false                  # a project may only turn it on
-  ```
-
-Details: [docs/user.md](docs/user.md), [ADR-0002](docs/adr/0002-skill-manifest-admission.md).
-
-### Warmup (Progressive Disclosure)
-
-`gym warmup` generates lightweight skill metadata for context-efficient agent startup:
-- `--format xml` → `<available_skills>` XML for Claude Code
-- `--format json` → JSON array of skill metadata
-- `--format agents-md` → AGENTS.md format for multi-agent compatibility
-- `--scope all|global|project` → filter by install scope
-- effective by default: global plus every folder scope on the chain, nearest wins; `--no-inherit` keeps the nearest scope only; `--dir FOLDER` reads as seen from that folder
-- `-o FILE` → write to file (default: stdout)
-
-Implements the agentskills.io progressive disclosure pattern: agents load only name+description at startup (~100 tokens), then fetch full skill content on-demand.
-
-### Folder scopes
-
-A folder scope is a project scope rooted at a folder you choose, for work organised as a tree of folders (company, unit, project):
-- `gym learn --dir FOLDER …` installs into `FOLDER/.gym`; `gym train --dir FOLDER [-r]` upgrades it (and the scopes below it); `gym list [--dir FOLDER] [--effective]` shows one scope or the whole chain
-- inheritance is resolved when gym reads (`warmup`, `list --effective`), never by copying skills into descendants
-- config of every ancestor folder is merged, outermost to innermost; an inner folder can tighten admission settings, never loosen them
-- the chain stops at `$HOME` and skips ancestor `.gym` directories you do not own or that others can write
-
-Details: [docs/user.md](docs/user.md), [ADR-0003](docs/adr/0003-folder-scopes-lockfile-uninstall-sources.md).
-
-### Cheat sheets (toolspec + tip)
-
-`gym cheat <topic>` renders inline hints from gym's commands and installed skills:
-- `gym cheat warmup` → hints on warmup usage
-- `gym cheat learn` → hints on learn usage
-- `gym cheat --tip-export` → writes tip adapter file for opt-in bridge integration (GYM_TIP_BUS_BRIDGE=1).
-
-### Learn sources
-
-`gym learn` supports:
-- skill names from local merged registry index; `name@version` pins an exact registry version (`pin-unavailable` if the index lacks it)
-- direct URLs (`https://`, `ssh://`, `git@`, `file://`) and local directories; `url#ref` pins a branch, tag or 40/64-hex commit (`ref-not-found` if absent)
-- archives (`*.tar.gz`, `*.tgz`, `*.zip`) as a path, `file://` URL or https URL: extracted with the standard library (`archive-invalid: <reason>` for traversal, links, devices, duplicates, more than 10 000 entries or 256 MiB), digest over the extracted tree; `gym digest <archive>`
-- a registry (`repositories[].url`) may be an https URL, a `file://` URL or a path to an index file; `repositories[].auth` (`bearer` via `token_env` or `token_file`, or `git-credential`) from user, system or `-c` config only
-- no arguments: restore every skill the scope's lock lists (see Lock)
-- default target is project-local install in `CWD/.gym/skills`; `--dir FOLDER` installs into another folder scope
-- use `--global` (or `-g`) for global install scope
-- if multiple install paths match the chosen scope, `gym learn` installs into all of them
-- use `--agent` patterns (or `--path`) to filter install targets
-
-Install gates on validator pass (`skills-ref validate {path}` by default), admission checks, and policy verdicts.
-
-### Lock
-
-`gym learn` records each install in `<root>/.gym/lock.json` (global: `<config-dir>/gym/lock.json`): source, requested pin, version, commit, content digest (`gym.lock/v1`, sorted, no timestamps). Commit it; `.gym/.gitignore` keeps `installed.json` and `skills/` out. `gym learn` with no arguments restores from it without reading the registry index; `gym learn --frozen` and `gym list --check` report `missing`, `digest-drift`, `modified` (exit 1) and `untracked` (warning); `gym train` skips pinned entries and rewrites the others; `gym unlearn` removes the entry (`--keep-lock` keeps it). `lock.frozen: true` (a project may turn it on, never off) refuses any change. A lock source that is absolute or leaves the folder is refused (`lock-source-escapes`). See [docs/user.md](docs/user.md#lock-and-pins).
-
-### Train policy
-
-- `gym train` with no args upgrades all matching scope.
-- `gym train name1 name2` upgrades named skills.
-- Patterns are accepted (`gym train "auth-*"`).
-- If run inside a project with installed project skills:
-  - project skills are upgraded
-  - matching global installs are also upgraded by default
-  - use `gym train --no-global` to disable global mirror
-- If run outside a project with skills:
-  - global skills only
-- `--dir FOLDER` trains that folder scope; `--recursive` also trains the scopes below it, each on its own (a failing scope does not stop the rest; exit 1 at the end)
-- skills whose lock entry was requested explicitly (`name@version`, `url#ref`) are skipped; `--frozen` fails with `lock-frozen` if anything would upgrade
-
-### Global flags (kit/console/cli)
-
-New persistent flags added by the event-driven interop track:
-- `--bus memory|sqlite|network` — event bus adapter (default: env-driven, else memory).
-- `--strict` — fail-closed on policy/judgement timeouts (fail-open by default).
-- `--insecure` — downgrade DENY verdicts to WARN (allow risky coaches/skills).
-- `--gate-timeout=DURATION` — max wait for sync gates (default 30s).
-- `--refresh-judgement` — bypass coach judgement cache.
-
-Inherited from kit/console/cli: `--format`, `--cols`, `--quiet`, `--no-color`, `--no-hints`, `-V`, `-C`, `--profile`, `--progress-format`, `--offline`.
-
-### CLI parsing/config
-
-- Command tree and aliases are implemented with Cobra.
-- Runtime CLI overrides are loaded with Viper from:
-  - `.gym/cli.yaml` in current working directory (repository content: only `learn.agents`, `train.no_global: true` and `strict: true` are honoured; every other key is ignored with `cli: ignoring project key "<key>" (user config or flags only)`)
-  - `$XDG_CONFIG_HOME/gym/cli.yaml` (unrestricted; wins over the project file; flags win over both)
-- Env overrides are supported via `GYM_*` keys (for example `GYM_LEARN_GLOBAL=true`).
-- `-c/--config` (from kit/console/cli, listed under `--help-all`) layers extra config; see Configuration.
-
-### IDE/TDE path awareness
-
-Known global standards are detected and surfaced in `gym paths` and `gym paths add` suggestions:
 - `~/.claude/skills`
 - `~/.cursor/skills`
 - `~/.gemini/skills`
 - `~/.codex/skills`
 - `~/.windsurf/skills`
 
+Details: [Folder scopes](docs/user.md#folder-scopes).
+
+### Lock
+
+`gym learn` records each install in `<root>/.gym/lock.json` (global:
+`<config-dir>/gym/lock.json`): source, requested pin, version, commit, content digest.
+Sorted, no timestamps, meant to be committed.
+
+- `gym learn` (no arguments): restore from the lock without reading the registry index
+- `gym learn --frozen`, `gym list --check`: report `missing`, `digest-drift`, `modified`
+  (exit 1) and `untracked` (warning)
+- `lock.frozen: true`: refuse any change to the lock
+
+Details: [Lock and pins](docs/user.md#lock-and-pins).
+
+### Train
+
+- no arguments: every skill of the scope; names and patterns (`gym train "auth-*"`) narrow
+- inside a project: project skills, plus matching global installs (`--no-global` disables)
+- outside a project: global skills only
+- `--dir FOLDER -r`: that folder scope and every scope below it, each on its own
+- skills pinned explicitly (`name@version`, `url#ref`) are skipped; `--frozen` changes
+  nothing and fails if an upgrade is available
+
+### Trust gates
+
+Every install and upgrade passes, in order:
+
+1. **Validator**: `skills-ref validate {path}` by default
+2. **Admission**: content digest against its pin, optional `gym.json` manifest
+   (`allowed_tools`, `data_class`), data class ceiling (default `internal`), operator
+   approval bound to the exact digest
+3. **Policies** (CEL):
+   - declared `postinstall` / `shell_hook`: sudo, `curl | bash`, `/etc/hosts` edits,
+     suspicious chmod, package installer shells, egress in hooks
+   - script files (`#!`, `.sh`, `.py`, `.js`, …): same command patterns, warn only
+   - text files: secrets (deny); large binaries (warn)
+   - not scanned: SKILL.md prose for commands
+
+Only the operator relaxes a gate: user policies in `$XDG_CONFIG_HOME/gym/policies/` may
+redefine, disable or relax; project policies may only add. A skill cannot approve itself.
+
+`gym coach hire` also scores the coach repository with `rsx` (cached 24h; shown by
+`gym coach list`). Without `rsx` the hire proceeds with a warning; `--strict` fails
+instead.
+
+```bash
+gym guard list                 # effective policies
+gym guard test ./my-skill      # dry-run admission and policies
+gym guard approve ./my-skill   # approve this exact digest
+```
+
+Details: [Trust and safety](docs/user.md#trust-and-safety).
+
 ### Network policy
 
-`network.mode: open|allowlist|offline` with `network.allow_hosts` (`host`, `host:port`, `*.suffix`) limits which hosts gym contacts: registries, archives, git (the effective URL after `insteadOf`), the event bus. `--offline` is `mode: offline`. Project and folder configs can only tighten. A denial is `network-denied: ...`. Name-based, not address-based; a firewall remains the guarantee. For an isolated deployment combine it with `admission.require_pin: remote`; see [docs/user.md](docs/user.md#network-and-credentials).
+`network.mode: open|allowlist|offline` with `network.allow_hosts` limits the hosts gym
+contacts: registries, archives, git, the event bus. Project and folder configs can only
+tighten. For a machine that must reach only your own hosts, combine `allowlist` with
+`admission.require_pin: remote`: [Isolated deployment](docs/user.md#isolated-deployment).
+
+### Warmup
+
+`gym warmup` implements agentskills.io progressive disclosure: agents load name +
+description at startup, full skill content on demand.
+
+```bash
+gym warmup                                  # <available_skills> XML
+gym warmup --format agents-md -o AGENTS.md
+gym warmup --format json --scope project
+```
 
 ### Serving a registry
-
-`gym serve` runs a local HTTP server exposing:
-- `GET /skills.json` (spec-shaped `skills.json` manifest: every version of each skill, with `digest` when the index has one)
-- `GET /_index.json` (full merged index, for debugging)
-- `GET /health`
-
-Example:
 
 ```bash
 gym serve --host 127.0.0.1 --port 4873
 ```
 
-Daemon mode (with SQLite bus):
+- `GET /skills.json`: every version of each skill, with `digest` when the index has one
+- `GET /_index.json`: full merged index, for debugging
+- `GET /health`
+
+`--update` refreshes the index on start, `--refresh 10m` periodically; `--name` sets
+`repository.name`. Daemon mode (SQLite bus):
 
 ```bash
 gym serve --daemon --host 127.0.0.1 --port 4873
@@ -227,47 +276,34 @@ gym serve --status --host 127.0.0.1 --port 4873
 gym serve --stop --host 127.0.0.1 --port 4873
 ```
 
+### Events
+
+gym publishes installs, coach hires, policy verdicts and hints on an event bus (`--bus`),
+so other tools (`rsx`, `tip`, policy validators) coordinate without tight coupling.
+`gym cheat --tip-export` writes the `tip` adapter; `GYM_TIP_BUS_BRIDGE=1` enables the
+bridge. Details: [Event bus and daemon mode](docs/user.md#event-bus-and-daemon-mode).
+
 ## Configuration
 
-Config is YAML, layered lowest to highest:
+YAML, layered lowest to highest:
+
 1. built-in defaults
 2. system: `/etc/gym/config.yaml`
-3. user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else the OS default: `~/.config/gym` on Linux, `~/Library/Application Support/gym` on macOS)
-4. project: nearest `.gym/config.yaml` at or above the working directory
-
-Canonical file name is `config.yaml`. An existing `config.json` (user or project) is still read when no `config.yaml` sits beside it, and the previous directories (`~/.config/gym`, `~/.local/share/gym`, `~/.local/state/gym`, `~/.cache/gym`) are still used, all four together, when any of them exists and the matching `XDG_*` variable is unset (a set variable always wins). Changes made by gym write `config.yaml`, seeded from the old `config.json`, which is left untouched.
+3. user: `config.yaml` in `$XDG_CONFIG_HOME/gym` (else `~/.config/gym` on Linux,
+   `~/Library/Application Support/gym` on macOS)
+4. project: every `.gym/config.yaml` at or above the working directory (up to `$HOME`),
+   outermost first
 5. extra files: `-c <file>` (repeatable, in order; a missing file is an error)
 6. overrides: `-c key=value` (repeatable; dotted keys nest; value parses as YAML)
 
-Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them, not appended.
-
-A project file is repository content: whoever cloned the repository did not write it. A project config can set only `install_paths`, `repositories`, `curation`, `upgrade` and `admission` (tighten-only, see Admission). Any other key, `validator` included, is ignored with one warning per key; the user and system files, `-c <file>` and `-c key=value` are the operator's and are not restricted. A project `install_paths` entry must be relative and stay inside the project root (no `..`, no `~`, no symlink out of the tree); relative paths resolve against the project root, not the working directory. Other entries are ignored with a warning. The project's `.gym/installed.json` is trusted only for records whose `install_path` is `<install path>/<skill name>` under the project root (project scope) or a configured or standard global path (global scope); `gym train` refuses the rest with `install-path-untrusted` and leaves them alone.
-
-```bash
-gym -c curation.min_stars=50 paths
-gym -c /path/to/extra.yaml paths
-gym -c 'install_paths=[{name: x, path: /opt/skills, scope: global}]' paths
-```
-
-Project state:
-- `<project-root>/.gym/installed.json`
-
-Global state:
-- `$XDG_STATE_HOME/gym/installed-global.json`
-
-Local registry index cache:
-- `$XDG_DATA_HOME/gym/registry-index.json`
-
-### Example `config.yaml`
+Lists (`repositories`, `install_paths`) are replaced by the highest layer that sets them,
+not appended.
 
 ```yaml
 repositories:
   - name: official-curated
     url: https://registry.example.com/curated/skills.json
     curated: true
-  - name: community-pack
-    url: https://example.com/community/skills.json
-    curated: false
 install_paths:
   - name: claude-global
     path: ~/.claude/skills
@@ -282,25 +318,87 @@ validator:
   timeout_seconds: 20
 upgrade:
   mirror_global_from_project: true
+admission:
+  max_data_class: internal   # ceiling
+  require_manifest: warn     # off | warn | reject
+  require_approval: false
+  require_pin: none          # none | remote | all
+network:
+  mode: open                 # open | allowlist | offline
+lock:
+  frozen: false
 ```
 
-## Repository metadata (`skills.json`)
+```bash
+gym -c curation.min_stars=50 paths
+gym -c /path/to/extra.yaml paths
+gym -c 'install_paths=[{name: x, path: /opt/skills, scope: global}]' paths
+```
 
-Each skill repository can expose `skills.json` for indexing/tracking.
+### Project files are untrusted
 
-See `examples/skills.json`.
+A project file arrives with a clone; whoever cloned it did not write it. So a project or
+folder config:
 
-Curation labeling rules:
-- Curated source + stars >= threshold => curated
-- Below threshold => non-curated label
-- `curated_early: true` (or `curated: true`) marks curated despite stars
+- may set only `install_paths`, `repositories` (without `auth`), `curation`, `upgrade`
+- may only tighten `admission` and `network`, and only turn `lock.frozen` on
+- has every other key, `validator` included, ignored with a warning
+- must keep `install_paths` relative and inside the project root
 
-## Testing
+User and system files, `-c <file>` and `-c key=value` are the operator's and unrestricted.
+Other repository content gets the same distrust: `.gym/cli.yaml` and `.gym/policies/` are
+restricted, `.gym/installed.json` and `.gym/lock.json` are checked before use. Details:
+[Scopes](docs/user.md#scopes).
+
+### CLI defaults
+
+`cli.yaml` sets flag defaults: `$XDG_CONFIG_HOME/gym/cli.yaml` (unrestricted) and
+`.gym/cli.yaml` (project: only `learn.agents`, `train.no_global: true`, `strict: true`).
+Flags win over both. Environment: `GYM_*` keys, for example `GYM_LEARN_GLOBAL=true`.
+
+### Files
+
+| What | Where |
+|------|-------|
+| User config, policies | `$XDG_CONFIG_HOME/gym/config.yaml`, `$XDG_CONFIG_HOME/gym/policies/` |
+| Project config, policies | `<root>/.gym/config.yaml`, `<root>/.gym/policies/` |
+| Lock | `<root>/.gym/lock.json`; global: `<config-dir>/gym/lock.json` |
+| Installed state | `<root>/.gym/installed.json`; global: `$XDG_STATE_HOME/gym/installed-global.json` |
+| Registry index cache | `$XDG_DATA_HOME/gym/registry-index.json` |
+| Approvals | `<config-dir>/gym/approvals.json` |
+
+Full list: [Files and Locations](docs/user.md#files-and-locations).
+
+## Publishing skills (`skills.json`)
+
+A coach is a URL to a `skills.json` manifest listing skills, versions and sources. Example:
+[`examples/skills.json`](examples/skills.json).
+
+Curation labels:
+
+- curated source and stars >= `curation.min_stars`: curated
+- below the threshold: non-curated
+- `curated_early: true` (or `curated: true`): curated despite stars
+
+## Docs
+
+- User guide: [docs/user.md](docs/user.md)
+- Use cases: [docs/examples.md](docs/examples.md)
+- Dev guide: [docs/dev.md](docs/dev.md)
+- Agent notes: [docs/agent.md](docs/agent.md)
+
+## Development
 
 ```bash
-go test ./...
+make build   # go build -o gym ./cmd/gym
+make test    # go test ./...
+make fmt vet
 ```
 
 ## Contributing
 
-See `CONTRIBUTING.md`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
