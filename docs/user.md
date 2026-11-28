@@ -378,9 +378,24 @@ Endpoints:
 
 ### Policy guards (CEL)
 
-`gym learn` and `gym train` now gate installations on policy rules designed to catch risky patterns:
+`gym learn` and `gym train` gate installations on policy rules designed to catch risky patterns:
 
-- **Default behavior**: warn on violations but allow install. Policy guards check for: `sudo`/`doas`/`pkexec`, `curl|bash` pipes, secret leakage (AWS keys, GitHub tokens), egress in shell hooks, large binaries, suspicious chmod, `/etc/hosts` edits, postinstall scripts, package installer shells.
+- **Declared commands** (`postinstall`, `shell_hook` in `gym.json`): `sudo`/`doas`/`pkexec`,
+  `curl|bash` pipes, `/etc/hosts` edits, suspicious chmod, any postinstall script (deny);
+  package installer shells, egress in shell hooks (warn).
+- **Script files** in the skill tree (`#!` first line, or `.sh .bash .zsh .fish .ksh .ps1 .py
+  .rb .js .ts .pl`; `node_modules/` and `vendor/` included): same command patterns, as
+  `*-in-scripts` policies (`no-curl-bash-in-scripts`, `no-sudo-in-scripts`,
+  `no-hosts-edit-in-scripts`, `no-suspicious-chmod-in-scripts`,
+  `no-package-installer-in-scripts`). Warn only: a script finding never denies on its own;
+  `--strict` turns it into a deny.
+- **Text files** (SKILL.md included): secrets (AWS keys, GitHub tokens, Slack tokens, JWTs),
+  deny (`no-secret-leak`).
+- **Sizes**: binaries over 25 MiB (warn).
+- Not scanned: SKILL.md prose for command patterns, binaries, symlink targets, `.git/`, what
+  a skill does at runtime. Reads capped at 256 KiB per file and 4 MiB per scan (text,
+  scripts); content past a cap is not checked.
+- `gym guard test <dir>` and the install gate scan the same tree the same way.
 - `--strict`: fail (deny) on any violation; allow only on explicit ALLOW verdicts.
 - `--insecure`: downgrade DENY verdicts to WARN, allowing risky skills to install.
 - `--gate-timeout=30s`: override the default 30-second wait for guard evaluation.

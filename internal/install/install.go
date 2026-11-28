@@ -78,10 +78,10 @@ type Outcome struct {
 // GateFunc is the optional pre-install policy hook. paths is the list
 // of resolved install destinations (one per InstallSkillMulti
 // iteration; one for InstallSkill). scan carries the staging-dir scan
-// (postinstall, shell hook, secret scan, biggest binary) collected
-// before the gate runs so CEL policies that key on
+// (postinstall, shell hook, secret scan, script files, biggest binary)
+// collected before the gate runs so CEL policies that key on
 // payload.postinstall / payload.shell_hook / payload.scan /
-// payload.largest_binary_bytes can fire on real install metadata.
+// payload.scripts / payload.largest_binary_bytes can fire on real install metadata.
 // scan is the zero value for trivial source dirs. adm carries the
 // admission facts (digest, tool coverage, data class, approval) that
 // the admission-* policies adjudicate. Returning a non-nil error
@@ -93,9 +93,13 @@ type GateFunc func(ctx context.Context, entry registry.SkillEntry, scope string,
 // Empty fields mean "nothing found" — guard policies should treat them
 // as benign.
 type ScanResult struct {
-	Postinstall        string
-	ShellHook          string
-	Scan               string
+	Postinstall string
+	ShellHook   string
+	// Scan is the text of every text file in the tree (SKILL.md
+	// included), newline-joined, for secret patterns.
+	Scan string
+	// Scripts holds one entry per script file: its text.
+	Scripts            []string
 	LargestBinaryBytes int64
 }
 

@@ -212,10 +212,11 @@ func (g *Guard) publishVerdict(ctx context.Context, skill, reqID string, verdict
 
 // payloadFromInstall builds the CEL activation map for an install
 // request. Beyond the core install fields, the optional staging-dir scan
-// results (postinstall, shell_hook, scan, largest_binary_bytes) are
-// copied into the payload map; they are zero values when the publisher
-// did not scan. The "scan" field carries whatever scan text the
-// publisher attached. allow_postinstall and large_binary stay in the
+// results (postinstall, shell_hook, scan, scripts,
+// largest_binary_bytes) are copied into the payload map; they are zero
+// values when the publisher did not scan. "scan" is the text-file
+// content the publisher attached; "scripts" is a list with one entry
+// per script file's text. allow_postinstall and large_binary stay in the
 // map, always false, so policy expressions referencing them keep
 // evaluating; an allowance never comes from the package under
 // evaluation.
@@ -245,6 +246,7 @@ func payloadFromInstall(p events.SkillInstallRequestedPayload) map[string]any {
 		"postinstall":          p.Postinstall,
 		"shell_hook":           p.ShellHook,
 		"scan":                 p.Scan,
+		"scripts":              stringsToAny(p.Scripts),
 		"largest_binary_bytes": p.LargestBinaryBytes,
 		"allow_postinstall":    false,
 		"large_binary":         false,
@@ -319,6 +321,7 @@ func payloadFromUpgrade(p events.SkillUpgradePlannedPayload) map[string]any {
 			"postinstall":          p.Postinstall,
 			"shell_hook":           p.ShellHook,
 			"scan":                 p.Scan,
+			"scripts":              stringsToAny(p.Scripts),
 			"largest_binary_bytes": p.LargestBinaryBytes,
 			"allow_postinstall":    false,
 			"large_binary":         false,

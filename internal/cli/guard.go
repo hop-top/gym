@@ -54,10 +54,10 @@ func (a *App) gateUnavailable() error {
 // gym.skill.install.requested on the bus and blocks on the guard's
 // reply. Returns nil when no bus is wired (tests, --help calls).
 //
-// The staging-dir scan (postinstall, shell hook, biggest binary) is
-// forwarded onto the bus payload so CEL policies that key on
-// payload.postinstall / payload.shell_hook / payload.scan /
-// payload.largest_binary_bytes fire on real install metadata, and the
+// The staging-dir scan (postinstall, shell hook, text, script files,
+// biggest binary) is forwarded onto the bus payload so CEL policies
+// that key on payload.postinstall / payload.shell_hook / payload.scan /
+// payload.scripts / payload.largest_binary_bytes fire on real install metadata, and the
 // admission facts (digest, tools, data class, approval) ride along for
 // the admission-* policies. requestID correlates the requested and
 // rejected events of one attempt. folder is the scope root of a project
@@ -90,6 +90,7 @@ func (a *App) installGateFor(requestID, folder, policyRoot string) install.GateF
 			Postinstall:        scan.Postinstall,
 			ShellHook:          scan.ShellHook,
 			Scan:               scan.Scan,
+			Scripts:            scan.Scripts,
 			LargestBinaryBytes: scan.LargestBinaryBytes,
 		}, adm)
 		return guard.GateInstall(ctx, a.Bus(), payload, guard.GateConfig{

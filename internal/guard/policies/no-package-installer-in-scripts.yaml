@@ -1,0 +1,9 @@
+name: no-package-installer-in-scripts
+when: |
+  has(payload.scripts) && payload.scripts.exists(s, s.matches(
+    '(?i)\\b(npm\\s+install|yarn\\s+(add|install)|pnpm\\s+(add|install)|pip\\s+install|pip3\\s+install|brew\\s+install|apt(-get)?\\s+install|cargo\\s+install|gem\\s+install|go\\s+install)\\b'
+  ))
+effect: warn
+otherwise: allow
+severity: warn
+message: a script file shells out to a system package manager (npm/pip/brew/apt/cargo/gem/go install)

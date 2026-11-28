@@ -1,0 +1,9 @@
+name: no-curl-bash-in-scripts
+when: |
+  has(payload.scripts) && payload.scripts.exists(s, s.matches(
+    '(?i)(curl|wget|fetch)[^|\\n]*\\|\\s*(sh|bash|zsh|fish|ksh|dash)\\b'
+  ))
+effect: warn
+otherwise: allow
+severity: warn
+message: a script file pipes a remote download into a shell (curl|bash pattern)

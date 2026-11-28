@@ -76,6 +76,8 @@ Coach judging (rsx-backed):
 
 Policy guards (CEL):
 - `gym learn` / `gym train` gates on installed skills matching policy rules (sudo, curl|bash, secrets, egress, large binaries, postinstall scripts, etc.).
+- Scanned: declared `postinstall`/`shell_hook`; script files (`*-in-scripts` policies, warn
+  only); text files for secrets. Not scanned: SKILL.md prose for commands, runtime behaviour.
 - Fails DENY unless `--insecure` set (deny→warn) or `--strict` (warn→deny + timeout fail-closed).
 - `gym guard list` shows effective policies (baked-in + user overrides + project additions).
 - `gym guard test <skill-or-manifest>` dry-runs policies; exit 0=allow, 1=deny/warn.
