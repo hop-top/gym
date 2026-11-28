@@ -36,11 +36,17 @@ const (
 // digest_source is registry|lockfile|operator; digest_status is
 // match|unpinned|unpinned-required.
 type SkillInstallRequestedPayload struct {
-	Skill              string   `json:"skill"`
-	Version            string   `json:"version,omitempty"`
-	SourceURL          string   `json:"source_url"`
-	Scope              string   `json:"scope"`
-	Folder             string   `json:"folder,omitempty"`
+	Skill     string `json:"skill"`
+	Version   string `json:"version,omitempty"`
+	SourceURL string `json:"source_url"`
+	Scope     string `json:"scope"`
+	Folder    string `json:"folder,omitempty"`
+	// PolicyRoot is the scope root whose policy chain gates the request:
+	// the scope being operated on, which for a global item upgraded
+	// alongside a project scope is that project scope, not Folder. It
+	// selects the policy set and is never offered to policies. Empty: the
+	// command's own chain.
+	PolicyRoot         string   `json:"policy_root,omitempty"`
 	Paths              []string `json:"paths,omitempty"`
 	Postinstall        string   `json:"postinstall,omitempty"`
 	ShellHook          string   `json:"shell_hook,omitempty"`
@@ -122,7 +128,10 @@ type SkillUpgradePlannedPayload struct {
 	Items []UpgradePlanItem `json:"items"`
 	// Folder is the scope root of the plan's project items; empty when the
 	// plan holds only global items.
-	Folder             string   `json:"folder,omitempty"`
+	Folder string `json:"folder,omitempty"`
+	// PolicyRoot is the scope root whose policy chain gates the plan (see
+	// SkillInstallRequestedPayload.PolicyRoot).
+	PolicyRoot         string   `json:"policy_root,omitempty"`
 	Postinstall        string   `json:"postinstall,omitempty"`
 	ShellHook          string   `json:"shell_hook,omitempty"`
 	Scan               string   `json:"scan,omitempty"`

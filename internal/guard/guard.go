@@ -20,7 +20,10 @@ import (
 type Guard struct {
 	bus    *eventbus.Bus
 	engine *Engine
-	logger *charmlog.Logger
+	// resolve returns the engine for a scope root; nil means every request
+	// uses engine.
+	resolve EngineResolver
+	logger  *charmlog.Logger
 
 	// dedup tracks request_ids we've already evaluated so subsequent
 	// deliveries for the same request return the cached verdict.
@@ -41,6 +44,20 @@ type Option func(*Guard)
 // WithLogger installs a charm logger for findings/timeouts.
 func WithLogger(l *charmlog.Logger) Option {
 	return func(g *Guard) { g.logger = l }
+}
+
+// EngineResolver returns the engine whose policy set gates operations on the
+// scope rooted at root. It is built from the guard's own process state, and
+// is expected to cache: it is called once per request.
+type EngineResolver func(root string) (*Engine, error)
+
+// WithEngineResolver makes the guard evaluate a request that names a policy
+// root (payload policy_root) with the engine the resolver returns for it. A
+// request without one, or a guard without a resolver, uses the engine given
+// by WithEngine. A resolver error denies the request: no verdict from a
+// smaller policy set is ever issued.
+func WithEngineResolver(r EngineResolver) Option {
+	return func(g *Guard) { g.resolve = r }
 }
 
 // WithEngine installs a precompiled engine. When unset, New compiles
@@ -120,7 +137,7 @@ func (g *Guard) handleInstall(ctx context.Context, e bus.Event) error {
 		// kit/bus has no dedupe; unkeyed events are best-effort.
 		return nil
 	}
-	verdict, findings := g.evaluateOrCache(p.RequestID, payloadFromInstall(p))
+	verdict, findings := g.evaluateOrCache(p.RequestID, p.PolicyRoot, payloadFromInstall(p))
 	return g.publishVerdict(ctx, p.Skill, p.RequestID, verdict, findings)
 }
 
@@ -135,7 +152,7 @@ func (g *Guard) handleUpgrade(ctx context.Context, e bus.Event) error {
 	if p.RequestID == "" {
 		return nil
 	}
-	verdict, findings := g.evaluateOrCache(p.RequestID, payloadFromUpgrade(p))
+	verdict, findings := g.evaluateOrCache(p.RequestID, p.PolicyRoot, payloadFromUpgrade(p))
 	skill := ""
 	if len(p.Items) == 1 {
 		skill = p.Items[0].Skill
@@ -143,7 +160,15 @@ func (g *Guard) handleUpgrade(ctx context.Context, e bus.Event) error {
 	return g.publishVerdict(ctx, skill, p.RequestID, verdict, findings)
 }
 
-func (g *Guard) evaluateOrCache(reqID string, activation map[string]any) (Verdict, []Finding) {
+// engineFor is the engine for a request's policy root.
+func (g *Guard) engineFor(root string) (*Engine, error) {
+	if root == "" || g.resolve == nil {
+		return g.engine, nil
+	}
+	return g.resolve(root)
+}
+
+func (g *Guard) evaluateOrCache(reqID, policyRoot string, activation map[string]any) (Verdict, []Finding) {
 	g.mu.Lock()
 	if c, ok := g.dedup[reqID]; ok {
 		g.mu.Unlock()
@@ -151,7 +176,15 @@ func (g *Guard) evaluateOrCache(reqID string, activation map[string]any) (Verdic
 	}
 	g.mu.Unlock()
 
-	verdict, findings := g.engine.Evaluate(activation)
+	var verdict Verdict
+	var findings []Finding
+	if eng, err := g.engineFor(policyRoot); err != nil {
+		verdict = VerdictDeny
+		findings = []Finding{{Rule: "guard-unavailable", Severity: string(SeverityDeny),
+			Message: fmt.Sprintf("policies for %s did not load: %v", policyRoot, err)}}
+	} else {
+		verdict, findings = eng.Evaluate(activation)
+	}
 
 	g.mu.Lock()
 	g.dedup[reqID] = cachedVerdict{Verdict: verdict, Findings: findings}
