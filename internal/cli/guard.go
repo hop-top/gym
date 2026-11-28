@@ -21,7 +21,6 @@ import (
 	"hop.top/gym/internal/install"
 	"hop.top/gym/internal/netpolicy"
 	"hop.top/gym/internal/registry"
-	"hop.top/gym/internal/scope"
 	"hop.top/gym/internal/upgrade"
 	"hop.top/gym/internal/xdg"
 )
@@ -33,11 +32,11 @@ func newGuardForApp(a *App) (*guard.Guard, error) {
 	if a == nil || a.Bus() == nil {
 		return nil, fmt.Errorf("guard: app/bus not ready")
 	}
-	eng, err := a.loadGuardEngine()
+	eng, err := a.scopeEngine("")
 	if err != nil {
 		return nil, err
 	}
-	return guard.New(a.Bus(), guard.WithEngine(eng), guard.WithLogger(a.Logger()))
+	return guard.New(a.Bus(), guard.WithEngine(eng), guard.WithEngineResolver(a.scopeEngine), guard.WithLogger(a.Logger()))
 }
 
 // gateUnavailable reports, under --strict, that the guard subscriber
@@ -64,11 +63,18 @@ func (a *App) gateUnavailable() error {
 // rejected events of one attempt. folder is the scope root of a project
 // scope install ("" for global).
 func (a *App) installGate(requestID, folder string) install.GateFunc {
+	return a.installGateFor(requestID, folder, "")
+}
+
+// installGateFor is installGate for an operation on the scope rooted at
+// policyRoot: its policy chain gates the install, wherever the command
+// started. Empty policyRoot: the command's own chain.
+func (a *App) installGateFor(requestID, folder, policyRoot string) install.GateFunc {
 	if a == nil || a.Bus() == nil {
 		return nil
 	}
 	return func(ctx context.Context, entry registry.SkillEntry, scope string, paths []string, scan install.ScanResult, adm install.AdmissionResult) error {
-		if err := a.gateUnavailable(); err != nil {
+		if skip, err := a.scopeGate(policyRoot); err != nil || skip {
 			return err
 		}
 		payload := withAdmission(events.SkillInstallRequestedPayload{
@@ -79,6 +85,7 @@ func (a *App) installGate(requestID, folder string) install.GateFunc {
 			SourceHost:         sourceHostOf(entry.SourceURL),
 			Scope:              scope,
 			Folder:             folderOf(scope, folder),
+			PolicyRoot:         policyRoot,
 			Paths:              paths,
 			Postinstall:        scan.Postinstall,
 			ShellHook:          scan.ShellHook,
@@ -92,12 +99,13 @@ func (a *App) installGate(requestID, folder string) install.GateFunc {
 }
 
 // gateUpgradePlan publishes gym.skill.upgrade.planned and blocks on
-// the verdict. Caller drives this once for the whole plan.
-func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) error {
+// the verdict. Caller drives this once for the whole plan, gated by the
+// policy chain of the scope rooted at policyRoot ("": the command's own).
+func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem, policyRoot string) error {
 	if a == nil || a.Bus() == nil {
 		return nil
 	}
-	if err := a.gateUnavailable(); err != nil {
+	if skip, err := a.scopeGate(policyRoot); err != nil || skip {
 		return err
 	}
 	items := make([]events.UpgradePlanItem, 0, len(plan))
@@ -109,7 +117,7 @@ func (a *App) gateUpgradePlan(ctx context.Context, plan []upgrade.PlanItem) erro
 			Source: install.RedactURL(p.Skill.SourceURL),
 		})
 	}
-	payload := events.SkillUpgradePlannedPayload{Items: items, Folder: planFolder(plan), SourceHost: planSourceHost(plan)}
+	payload := events.SkillUpgradePlannedPayload{Items: items, Folder: planFolder(plan), PolicyRoot: policyRoot, SourceHost: planSourceHost(plan)}
 	return guard.GateUpgrade(ctx, a.Bus(), payload, guard.GateConfig{
 		Logger: a.Logger(),
 	})
@@ -144,18 +152,24 @@ func (a *App) guardCobra() *cobra.Command {
 	return g
 }
 
+// loadGuardEngine is the engine for the command's own folder chain.
 func (a *App) loadGuardEngine() (*guard.Engine, error) {
+	return a.buildGuardEngine(a.policyRoots(""))
+}
+
+// buildGuardEngine loads the policy set of a chain of folder scope roots,
+// outermost first: built-ins, user policies, then each root's
+// .gym/policies. The one place the loading rules are applied; chain
+// warnings are the config loader's to print.
+func (a *App) buildGuardEngine(roots []string) (*guard.Engine, error) {
 	dirs, err := xdg.AppDirs(config.AppName)
 	userDir := ""
 	if err == nil {
 		userDir = filepath.Join(dirs.ConfigHome, "policies")
 	}
-	// Every folder scope on the chain contributes its policies, outermost
-	// first. Chain warnings are the config loader's to print.
-	roots := scope.Chain(a.startDir()).Roots
 	var projectDirs []string
-	for i := len(roots) - 1; i >= 0; i-- {
-		projectDirs = append(projectDirs, filepath.Join(roots[i], ".gym", "policies"))
+	for _, r := range roots {
+		projectDirs = append(projectDirs, filepath.Join(r, ".gym", "policies"))
 	}
 	policies, err := guard.Load(guard.LoadOptions{
 		UserDir:     userDir,
