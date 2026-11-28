@@ -10,7 +10,7 @@ import (
 )
 
 // digestCobra builds `gym digest <dir>`: print the content digest that
-// registry maintainers and authors pin (see ADR-0002).
+// registry maintainers and authors pin.
 func (a *App) digestCobra() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "digest <dir|archive>",
