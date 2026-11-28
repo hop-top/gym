@@ -5,7 +5,7 @@ Thanks for taking the time to contribute.
 ## Development
 
 Prereqs:
-- Go 1.23+
+- Go 1.26.1+
 - `git`
 
 Build:
