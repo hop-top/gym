@@ -1,15 +1,48 @@
+# Version updates: one PR at a time across every ecosystem (multi-ecosystem
+#   group, open-pull-requests-limit 1). While it is open, Dependabot updates
+#   that PR instead of opening another. Cooldown 14d after release (every entry).
+# Security updates: immediate; cooldown never applies to them. One grouped PR
+#   per ecosystem. Needs the repo setting "Dependabot security updates".
+# Action updates regenerate the matching actions.lock entry in the same PR.
+#   Majors are ignored there: a new generation is bumped deliberately.
 version: 2
+
+multi-ecosystem-groups:
+  dependencies:
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "build(deps):"
+
 updates:
   - package-ecosystem: gomod
-    directory: /
-    schedule:
-      interval: weekly
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
+    directories:
+      - "/"
+    multi-ecosystem-group: dependencies
+    patterns:
+      - "*"
     cooldown:
       default-days: 14
+    groups:
+      go-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+    multi-ecosystem-group: dependencies
+    patterns:
+      - "*"
+    cooldown:
+      default-days: 14
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
