@@ -288,7 +288,7 @@ func (a *App) coachCobra() *cobra.Command {
 		RunE:  func(_ *cobra.Command, _ []string) error { return a.runCoachList() },
 	}
 	hire := &cobra.Command{
-		Use:   "hire [manifest-url-or-owner/repo]",
+		Use:   "hire [manifest-url-path-or-owner/repo]",
 		Short: "Add a coach source",
 		// 0 args = interactive wizard; 1 arg = legacy direct form.
 		Args: cobra.MaximumNArgs(1),

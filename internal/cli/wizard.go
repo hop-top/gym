@@ -32,9 +32,9 @@ type coachHirePrompts struct {
 // Returns ErrCoachHireAborted when the user cancels with ctrl-C.
 func runCoachHireWizard(ctx context.Context, app *App) (coachHirePrompts, error) {
 	steps := []wizard.Step{
-		wizard.TextInput("ref", "Manifest URL or owner/repo").
+		wizard.TextInput("ref", "Manifest URL, path or owner/repo").
 			WithRequired().
-			WithDescription("Examples: hop-top/skills, https://example.com/skills.json").
+			WithDescription("Examples: hop-top/skills, https://example.com/skills.json, ./skills.json").
 			WithValidateText(func(s string) error {
 				if strings.TrimSpace(s) == "" {
 					return errors.New("required")

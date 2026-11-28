@@ -33,7 +33,8 @@ If you use a different validator, set it in user or system config (or with `-c`)
 
 ### Coaches (registry sources)
 
-A coach is a URL to a `skills.json` manifest. Coaches are the equivalent of “taps” in Homebrew.
+A coach is a URL or local path to a `skills.json` manifest. Coaches are the equivalent of “taps”
+in Homebrew.
 
 - `gym coach hire …` adds a coach to config.
 - `gym coach dismiss …` removes a coach from config.
@@ -43,8 +44,21 @@ A coach is a URL to a `skills.json` manifest. Coaches are the equivalent of “t
 - `owner/repo` shorthand for GitHub (`main`/`master` raw `skills.json` candidates)
 - a direct `https://…/skills.json` URL
 - a URL ending in `/` (it will append `skills.json`)
+- a local index file: absolute, relative to the current folder, or `~/`-prefixed; stored as an
+  absolute path, in user (`--global`) and project config alike
+- a `file:///abs/path/skills.json` URL; stored as given
 
-`--name` sets the local label for this coach entry in your config. If omitted, `gym` tries to read `repository.name` from the manifest; if missing, it derives a name from the URL/repo.
+Disambiguation: an argument starting with `/`, `./`, `../` or `~`, or naming an existing regular
+file, is a path; any other `owner/repo` is the GitHub shorthand. A path that does not exist fails
+the hire with the absolute path in the error, without a GitHub lookup.
+
+A local index is read from disk: `--offline` and `network.mode: allowlist|offline` do not apply
+to it. The manifest is validated as for a URL; an unreadable or invalid file fails the hire,
+naming the path, unless `--force`.
+
+`--name` sets the local label for this coach entry in your config. If omitted, `gym` tries to
+read `repository.name` from the manifest; if missing, it derives a name from the URL/repo or file
+name.
 
 ### Scopes
 
