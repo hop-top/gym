@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.0.10
+	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.1
 	github.com/google/uuid v1.6.0
@@ -33,8 +33,8 @@ require (
 	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect
-	github.com/charmbracelet/x/ansi v0.11.8 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
+	github.com/charmbracelet/x/ansi v0.11.9 // indirect
 	github.com/charmbracelet/x/exp/charmtone v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20260413165052-6921c759c913 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -60,7 +60,7 @@ require (
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mattn/go-runewidth v0.0.27 // indirect
+	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
@@ -81,7 +81,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tj/go-naturaldate v1.3.0 // indirect
-	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
