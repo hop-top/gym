@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,32 +41,37 @@ type manifestInfo struct {
 	Name string
 }
 
-func tryFetchManifestInfo(ctx context.Context, manifestURL string) (manifestInfo, error) {
+// tryFetchManifestInfo loads the manifest at loc through the loader gym
+// update uses: a path or file:// URL is read from disk, an http(s) URL goes
+// through the network policy.
+func tryFetchManifestInfo(ctx context.Context, loc string) (manifestInfo, error) {
 	rep := progress.FromContext(ctx)
 	rep.Emit(ctx, progress.Event{
 		Phase: "fetch-manifest",
-		Item:  manifestURL,
+		Item:  loc,
 		At:    time.Now().UTC(),
 	})
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := registry.Get(ctx, client, manifestURL, nil, "")
-	if err != nil {
-		emitFetchManifestDone(ctx, rep, manifestURL, false)
+	fail := func(err error) (manifestInfo, error) {
+		emitFetchManifestDone(ctx, rep, loc, false)
 		return manifestInfo{}, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		emitFetchManifestDone(ctx, rep, manifestURL, false)
-		return manifestInfo{}, fmt.Errorf("status %d", resp.StatusCode)
+	// A decode problem names a local file; a fetch error already does.
+	invalid := func(err error) (manifestInfo, error) {
+		if p, ok := registry.LocalIndexPath(loc); ok {
+			err = fmt.Errorf("manifest %s: %w", p, err)
+		}
+		return fail(err)
+	}
+	b, err := registry.HTTPFetcher{Client: &http.Client{Timeout: 10 * time.Second}}.Fetch(ctx, loc)
+	if err != nil {
+		return fail(err)
 	}
 	var raw map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		emitFetchManifestDone(ctx, rep, manifestURL, false)
-		return manifestInfo{}, err
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return invalid(err)
 	}
 	if _, ok := raw["skills"]; !ok {
-		emitFetchManifestDone(ctx, rep, manifestURL, false)
-		return manifestInfo{}, errors.New("missing skills key")
+		return invalid(errors.New("missing skills key"))
 	}
 	var repo struct {
 		Repository struct {
@@ -74,7 +81,7 @@ func tryFetchManifestInfo(ctx context.Context, manifestURL string) (manifestInfo
 	if b, ok := raw["repository"]; ok {
 		_ = json.Unmarshal(b, &repo.Repository)
 	}
-	emitFetchManifestDone(ctx, rep, manifestURL, true)
+	emitFetchManifestDone(ctx, rep, loc, true)
 	return manifestInfo{Name: strings.TrimSpace(repo.Repository.Name)}, nil
 }
 
@@ -115,6 +122,59 @@ func ghRawCandidates(owner, repo string) []string {
 	}
 }
 
+// looksLikePath reports whether ref is written as a path: absolute, ./, ../
+// or ~-prefixed.
+func looksLikePath(ref string) bool {
+	if filepath.IsAbs(ref) || strings.HasPrefix(ref, "/") || strings.HasPrefix(ref, "~") {
+		return true
+	}
+	for _, p := range []string{"./", "../", "." + string(filepath.Separator), ".." + string(filepath.Separator)} {
+		if strings.HasPrefix(ref, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveLocalManifest maps a hire argument naming a local index file to
+// the location stored in config, resolvable from any working directory.
+// A file:// URL must hold an absolute path and is kept as given; a path
+// (absolute, relative to cwd or ~-prefixed) becomes absolute. ok is false
+// when ref is not local: a URL, or neither path-looking nor an existing
+// regular file (owner/repo keeps its shorthand meaning).
+func resolveLocalManifest(ref, cwd string) (loc string, ok bool, err error) {
+	if p, isFile := strings.CutPrefix(ref, "file://"); isFile {
+		if !filepath.IsAbs(filepath.FromSlash(p)) {
+			return "", true, fmt.Errorf("file URL %s: want an absolute path (file:///path/to/skills.json)", ref)
+		}
+		return ref, true, nil
+	}
+	if strings.Contains(ref, "://") {
+		return "", false, nil
+	}
+	p := ref
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~"+string(filepath.Separator)) {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return "", true, fmt.Errorf("manifest path %s: %w", ref, herr)
+		}
+		p = filepath.Join(home, p[1:])
+	} else if strings.HasPrefix(p, "~") {
+		return "", true, fmt.Errorf("manifest path %s: only ~/ is expanded", ref)
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(cwd, p)
+	}
+	p = filepath.Clean(p)
+	if looksLikePath(ref) {
+		return p, true, nil
+	}
+	if fi, serr := os.Stat(p); serr == nil && fi.Mode().IsRegular() {
+		return p, true, nil
+	}
+	return "", false, nil
+}
+
 func manifestCandidates(ref string) ([]string, error) {
 	if isRepoShorthand(ref) {
 		parts := strings.Split(ref, "/")
@@ -146,6 +206,12 @@ func manifestCandidates(ref string) ([]string, error) {
 }
 
 func deriveSourceName(urlOrRef string) string {
+	if !strings.Contains(urlOrRef, "://") && filepath.IsAbs(urlOrRef) {
+		if b := strings.TrimSuffix(filepath.Base(urlOrRef), ".json"); b != "" && b != "." && b != string(filepath.Separator) {
+			return b
+		}
+		return "source"
+	}
 	if isRepoShorthand(urlOrRef) {
 		parts := strings.Split(urlOrRef, "/")
 		return parts[1]
@@ -166,14 +232,21 @@ func deriveSourceName(urlOrRef string) string {
 func (a *App) runCoachHire(ctx context.Context, opts coachHireOptions, ref string) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return errors.New("coach hire requires exactly one manifest url or owner/repo")
+		return errors.New("coach hire requires exactly one manifest url, path or owner/repo")
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	emitPhase(ctx, "resolve", ref)
-	cands, err := manifestCandidates(ref)
+	local, isLocal, err := resolveLocalManifest(ref, a.CWD)
 	if err != nil {
+		emitFail(ctx, "resolve", ref)
+		return err
+	}
+	var cands []string
+	if isLocal {
+		cands = []string{local}
+	} else if cands, err = manifestCandidates(ref); err != nil {
 		emitFail(ctx, "resolve", ref)
 		return err
 	}
@@ -206,7 +279,11 @@ func (a *App) runCoachHire(ctx context.Context, opts coachHireOptions, ref strin
 		if info.Name != "" {
 			coachName = info.Name
 		} else {
-			coachName = deriveSourceName(ref)
+			nameFrom := ref
+			if isLocal {
+				nameFrom = local
+			}
+			coachName = deriveSourceName(nameFrom)
 		}
 	}
 

@@ -98,7 +98,7 @@ const maxIndexBytes = 64 << 20
 // FetchSource loads src.URL, authenticating with src.Auth when set.
 func (h HTTPFetcher) FetchSource(ctx context.Context, src RepositorySource) ([]byte, error) {
 	loc := src.URL
-	if p, ok := localIndexPath(loc); ok {
+	if p, ok := LocalIndexPath(loc); ok {
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return nil, fmt.Errorf("registry index %s: %w", p, err)
@@ -124,9 +124,10 @@ func (h HTTPFetcher) FetchSource(ctx context.Context, src RepositorySource) ([]b
 	return ioReadAll(io.LimitReader(resp.Body, maxIndexBytes))
 }
 
-// localIndexPath reports whether loc names a file on disk: a file:// URL
-// or anything that is not a URL.
-func localIndexPath(loc string) (string, bool) {
+// LocalIndexPath reports whether loc names a file on disk, and which: a
+// file:// URL or anything that is not a URL. Such a location is read from
+// disk and is never subject to the network policy.
+func LocalIndexPath(loc string) (string, bool) {
 	if p, ok := strings.CutPrefix(loc, "file://"); ok {
 		return p, true
 	}
